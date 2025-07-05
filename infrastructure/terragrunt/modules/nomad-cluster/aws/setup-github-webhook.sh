@@ -32,11 +32,11 @@ gh api \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   "/repos/$REPO/hooks" \
   -f name='web' \
-  -f active=true \
+  -F active=true \
   -F config[url]="$WEBHOOK_URL" \
   -F config[content_type]='json' \
   -F config[secret]="$WEBHOOK_SECRET" \
-  -F config[insecure_ssl]='0' \
+  -F config[insecure_ssl]=0 \
   -f events[]='push' > /tmp/webhook_response.json
 
 # Check if webhook was created successfully
