@@ -548,11 +548,12 @@ resource "aws_lb" "nomad" {
 
   enable_deletion_protection = false
 
-  access_logs {
-    bucket  = aws_s3_bucket.alb_logs[0].bucket
-    prefix  = "alb"
-    enabled = true
-  }
+  # Temporarily disable access logs to fix permissions issue
+  # access_logs {
+  #   bucket  = aws_s3_bucket.alb_logs[0].bucket
+  #   prefix  = "alb"
+  #   enabled = true
+  # }
 
   tags = merge(var.common_tags, {
     Name = "${var.cluster_name}-alb"
@@ -607,20 +608,7 @@ resource "aws_lb_target_group" "gengine_api" {
 }
 
 # ALB Listeners
-resource "aws_lb_listener" "nomad_ui" {
-  count = var.enable_alb ? 1 : 0
-
-  load_balancer_arn = aws_lb.nomad[0].arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.nomad_ui[0].arn
-  }
-}
-
-resource "aws_lb_listener" "gengine_api" {
+resource "aws_lb_listener" "http" {
   count = var.enable_alb ? 1 : 0
 
   load_balancer_arn = aws_lb.nomad[0].arn
@@ -637,7 +625,7 @@ resource "aws_lb_listener" "gengine_api" {
 resource "aws_lb_listener_rule" "gengine_api" {
   count = var.enable_alb ? 1 : 0
 
-  listener_arn = aws_lb_listener.gengine_api[0].arn
+  listener_arn = aws_lb_listener.http[0].arn
   priority     = 100
 
   action {

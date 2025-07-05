@@ -50,6 +50,12 @@ variable "key_pair_name" {
   default     = ""
 }
 
+variable "enable_bastion" {
+  description = "Enable bastion host for SSH access to private instances"
+  type        = bool
+  default     = false
+}
+
 variable "consul_enabled" {
   description = "Enable Consul service discovery"
   type        = bool
