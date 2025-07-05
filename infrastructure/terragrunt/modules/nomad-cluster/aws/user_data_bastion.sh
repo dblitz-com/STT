@@ -118,8 +118,8 @@ if [ -f "/tmp/webhook-self-update-needed" ]; then
 
 set -e
 
-APP_ID="1529020"
-INSTALLATION_ID="74520528"  # Direct installation ID for dBlitz account
+APP_ID="1529272"
+INSTALLATION_ID="74523281"  # dblitz-com org installation ID
 PRIVATE_KEY_PATH="/opt/webhook/github-app/private-key.pem"
 
 # Generate JWT for GitHub App authentication

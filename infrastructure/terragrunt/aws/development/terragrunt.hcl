@@ -36,7 +36,7 @@ inputs = {
   max_client_nodes   = 3
   
   # SSH Key for debugging
-  key_pair_name = "gengine-nomad-dev"
+  key_pair_name = "gengine-development-keypair"
   enable_bastion = true
   
   # Networking
