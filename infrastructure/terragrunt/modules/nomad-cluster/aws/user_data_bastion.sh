@@ -107,8 +107,21 @@ echo "$(date): Starting deployment for commit $COMMIT_SHA from $REF_NAME" >> /op
 export AWS_DEFAULT_REGION="${region}"
 export CLUSTER_NAME="${cluster_name}"
 
-# Check if self-update is needed
-if [ -f "/tmp/webhook-self-update-needed" ]; then
+# Clone or update repository first (will fail with old auth, but that's ok for now)
+REPO_DIR="/tmp/gengine-deploy"
+if [ -d "$REPO_DIR" ]; then
+    cd "$REPO_DIR"
+    git fetch origin 2>/dev/null || true
+    git reset --hard "$COMMIT_SHA" 2>/dev/null || true
+else
+    git clone "$REPO_URL" "$REPO_DIR" 2>/dev/null || true
+    cd "$REPO_DIR"
+    git checkout "$COMMIT_SHA" 2>/dev/null || true
+fi
+
+# Check if self-update is needed (from trigger file or from repository)
+if [ -f "/tmp/webhook-self-update-needed" ] || [ -f "$REPO_DIR/TRIGGER_SELF_UPDATE" ]; then
+    touch /tmp/webhook-self-update-needed
     echo "$(date): Running webhook self-update..." >> /opt/webhook/logs/deployment.log
     # Update GitHub App token generation script
     sudo tee /opt/webhook/github-app/get-token.sh << 'SELF_UPDATE_EOL'
@@ -170,8 +183,44 @@ echo "$ACCESS_TOKEN"
 SELF_UPDATE_EOL
     
     sudo chmod +x /opt/webhook/github-app/get-token.sh
+    
+    # Deploy new private key if needed
+    echo "$(date): Deploying new GitHub App private key..." >> /opt/webhook/logs/deployment.log
+    sudo tee /opt/webhook/github-app/private-key.pem << 'PRIVATE_KEY_EOL'
+-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEA0F3EVKyZoTho/8fcJCv6yq05WwiioBF0D9q46Hdv7p/M0EiH
+rAPrZr91/wb+oaqSL7r9sG9hzWFqjhSetUOatbzFTPILB8UiJEraoJjDVPSY129V
+uZjDNla3Al30rz+OuPTfOgoDADSLLbVJNy+taMQ8HwkvMnx8ufNLNgbQ53h+WYU0
+zQ1C7wvk8Q0k4YdgCnbwWco7eL3gpD54wi+dXVM83eN8X+sJLfj5Aoer879dRG3T
+k0K2cRc/iplvkginjOplSU+4m3EL7IZQ/9tasYghOnOch49T54M/PIoORR4S8RUo
+LPcwxMacE7K3ZvBMyPTQ/h9XB2lFgADKgXv3LwIDAQABAoIBAC0KyAEh2of+YLxC
+IPV0yF79uTNTl4wQmc0/k8802m5z/ttbgnCN3Fo2szQw9+RMshM9Uc/NFBBIqbcT
+AAfhGFWG/AOZIwdH9wxvXflvbHI1+cBAYgCf5Dsf3anWU6l6jMiwrnymY2Ws9hUo
+Zi5W0R6fpPt0ic5ZGME9tZl1Ob1/a61pZ4A8qm6cF67CTDbyqGPieY80JQxi0uvs
+ucKc/ENe0jO7h9i3jMWf4941S7bv4frRdUSeVTNWZq4XH9+imAxr7/kMiqsTwrfO
+6j/APA7Dc2yRnZECSsQ4r6o4b/PrBaQTB3/LjIQsW3pSp5bw+cjpDwjpfUJENg6a
+AGX0FDECgYEA74VhQSg01XAHmhAYKoOVl017WLSE9eBnxQB6xWPT6MK2DB5bcB+b
+HnlTRTI9LZLZFd0HXRViz2ODSRSpbNADZky/vMYwTS8p4VCzl00Sbr1AE30es2/l
+glGPfIsMfY0mDknVJuiTH1zPbrviiJsfsOyPWW/Xq8YcvDLCpJAwxScCgYEA3rOq
+uHh666zVTgaPsfk0ozuaVKpRSLGL6lStf4ToDwVH2k7+y2SXA5pqXoCrv6lsIEmT
+mb7Fk90s2qRPIfzLWIG1Fi4lxHGHVlilGOFFSLVaGjUnesyHuW9Ku/kQht0s/WMq
+6B3dS4r4P+OHgZU29pNATDS7mqKLScU6Q1yRUrkCgYABSzUlRvRSGtLPsDqRMDjE
+onSCHCeDtHybAc+n9UwVu8eD9T4FMwaBeaJLg2P1NQ/bIGCDzjPEbwMsh+IKZm0+
+Rjfa6y8jm5ecUfVGYfIxivAnqstZqMcSlyIxSAb/Pp3wAdIW7baturCcJoOovT3E
+lOKJVyNRGDbbhWKrxOOejQKBgDQUVBI7qpM+octTYXs/Sf36TEcMZWHYk13DW6d8
+j0Aj/f+hhZhO97nR/JoJASEbH7wVOL01jcLccEbZMeBC29Lg0lZTiGV+HyYkKMe+
+tpMgRefnEkp3Vi4ZRqLaxfCj/IdtD3WktkGaSB+4t9Gn8WiMWvb3RgANjwE7bDqg
+hSORAoGBAOopKs7T5i41PBihk47wY3H7q0gIzKaqomMyj2w0tJFAIUemvvBkKFhD
+Twb54FqAhfEuvmw/xcQoVz1gnlrpUjFMsDvcwyeJojFT8QNY0RzJMw8ETSWx/2B9
+8mDltJMXuXQqk9UfAX4H8bbZehExaiJuHB4U5w6SbbApK6a9ToiZ
+-----END RSA PRIVATE KEY-----
+PRIVATE_KEY_EOL
+    
+    sudo chmod 600 /opt/webhook/github-app/private-key.pem
+    sudo chown webhook:webhook /opt/webhook/github-app/private-key.pem
+    
     rm -f /tmp/webhook-self-update-needed
-    echo "$(date): Self-update completed" >> /opt/webhook/logs/deployment.log
+    echo "$(date): Self-update completed with new private key" >> /opt/webhook/logs/deployment.log
 fi
 
 # Get GitHub App access token for authentication
@@ -184,17 +233,24 @@ fi
 # Convert GitHub URL to authenticated HTTPS URL
 AUTHENTICATED_URL="https://x-access-token:${ACCESS_TOKEN}@github.com/dblitz-com/gengine.git"
 
-# Clone or update repository
-REPO_DIR="/tmp/gengine-deploy"
+# Clone or update repository with proper authentication
 if [ -d "$REPO_DIR" ]; then
     cd "$REPO_DIR"
     git remote set-url origin "$AUTHENTICATED_URL"
     git fetch origin
     git reset --hard "$COMMIT_SHA"
 else
+    # If initial clone failed, try again with auth
+    rm -rf "$REPO_DIR"
     git clone "$AUTHENTICATED_URL" "$REPO_DIR"
     cd "$REPO_DIR"
     git checkout "$COMMIT_SHA"
+fi
+
+# Clean up trigger file if it exists
+if [ -f "$REPO_DIR/TRIGGER_SELF_UPDATE" ]; then
+    echo "$(date): Self-update trigger file found and processed" >> /opt/webhook/logs/deployment.log
+    rm -f "$REPO_DIR/TRIGGER_SELF_UPDATE"
 fi
 
 # Navigate to Terragrunt directory

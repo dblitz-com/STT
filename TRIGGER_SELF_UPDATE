@@ -1,0 +1,9 @@
+# Trigger Self-Update for Webhook
+
+This file's presence in a commit will trigger the webhook self-update mechanism.
+The update includes:
+- New GitHub App ID: 1529272
+- New Installation ID: 74523281 (dblitz-com organization)
+- New private key deployment
+
+This file will be automatically removed after the update completes.
