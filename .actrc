@@ -1,0 +1,17 @@
+# Act configuration for local GitHub Actions testing
+
+# Use larger runner images for Docker-in-Docker support
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+-P ubuntu-22.04=catthehacker/ubuntu:act-22.04-full
+
+# Environment configuration
+--env-file .env.local
+--secret-file .secrets.local
+
+# Runner options
+--reuse
+--verbose
+
+# Container options
+--privileged
+--userns host

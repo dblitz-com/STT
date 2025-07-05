@@ -2,14 +2,21 @@
   "mcpServers": {
     "taskmaster-ai": {
       "command": "npx",
-      "args": ["-y", "--package=task-master-ai", "task-master-ai"],
+      "args": [
+        "-y",
+        "--package=task-master-ai",
+        "task-master-ai"
+      ],
       "env": {
         "OPENAI_API_KEY": "${OPENAI_API_KEY}"
       }
     },
     "Context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
     },
     "sequential-thinking": {
       "command": "npx",
@@ -30,21 +37,49 @@
     },
     "gmail-mcp": {
       "command": "node",
-      "args": ["/Users/devin/dblitz/engine/api-doc-to-mcp/generated/gmail-mcp-fixed/build/index.js"],
+      "args": [
+        "/Users/devin/dblitz/engine/api-doc-to-mcp/generated/gmail-mcp-fixed/build/index.js"
+      ],
       "env": {
         "OAUTH_TOKEN_OAUTH2": "${OAUTH_TOKEN_OAUTH2}"
       }
     },
     "puppeteer": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ]
     },
     "firecrawl-mcp": {
       "command": "npx",
-      "args": ["-y", "firecrawl-mcp"],
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
       "env": {
         "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
       }
+    },
+    "gengine-rest-api-to-mcp": {
+      "type": "http",
+      "url": "http://localhost:8001/mcp"
+    },
+    "chrome-mcp-stdio": {
+      "command": "npx",
+      "args": [
+        "node",
+        "/Users/devin/.nvm/versions/node/v22.17.0/lib/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js"
+      ]
+    },
+    "hf-mcp-server": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://huggingface.co/mcp",
+        "--header",
+        "Authorization: Bearer <YOUR_HF_TOKEN>"
+      ]
     }
   }
 }

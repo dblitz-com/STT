@@ -1,0 +1,48 @@
+{
+  "ref": "refs/heads/main",
+  "before": "abc123def456789abcdef0123456789abcdef012",
+  "after": "def456abc789def456abc789def456abc789def4",
+  "repository": {
+    "id": 123456789,
+    "name": "engine", 
+    "full_name": "devin/dblitz",
+    "private": true,
+    "owner": {
+      "login": "devin",
+      "id": 12345
+    },
+    "default_branch": "main"
+  },
+  "pusher": {
+    "name": "devin",
+    "email": "devin@example.com"
+  },
+  "head_commit": {
+    "id": "def456abc789def456abc789def456abc789def4",
+    "message": "feat: staging deployment ready",
+    "timestamp": "2024-01-15T14:30:00Z",
+    "author": {
+      "name": "Devin",
+      "email": "devin@example.com"
+    },
+    "committer": {
+      "name": "Devin",
+      "email": "devin@example.com"
+    }
+  },
+  "commits": [
+    {
+      "id": "def456abc789def456abc789def456abc789def4", 
+      "message": "feat: staging deployment ready",
+      "timestamp": "2024-01-15T14:30:00Z",
+      "author": {
+        "name": "Devin",
+        "email": "devin@example.com"
+      },
+      "committer": {
+        "name": "Devin",
+        "email": "devin@example.com"
+      }
+    }
+  ]
+}

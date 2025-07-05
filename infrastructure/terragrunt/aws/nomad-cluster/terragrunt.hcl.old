@@ -1,0 +1,107 @@
+terraform {
+  source = "../../modules/nomad-cluster//aws"
+}
+
+include "root" {
+  path = find_in_parent_folders()
+}
+
+include "region" {
+  path = find_in_parent_folders("region.hcl")
+}
+
+include "environment" {
+  path = find_in_parent_folders("env.hcl")
+}
+
+inputs = {
+  # Cluster Configuration
+  cluster_name = "gengine-nomad-${local.environment}"
+  
+  # Node Configuration
+  server_count = 3
+  client_count = 5
+  
+  # Instance Types
+  server_instance_type = "t3.medium"
+  client_instance_type = "t3.large"
+  
+  # Networking
+  vpc_cidr             = "10.0.0.0/16"
+  availability_zones   = ["${local.aws_region}a", "${local.aws_region}b", "${local.aws_region}c"]
+  
+  # Security
+  allowed_cidr_blocks = [
+    "10.0.0.0/8",     # Internal VPC traffic
+    "172.16.0.0/12",  # Private networks
+    "192.168.0.0/16", # Private networks
+  ]
+  
+  # Consul Integration
+  consul_enabled         = true
+  consul_datacenter     = local.aws_region
+  consul_encrypt_enable = true
+  
+  # Vault Integration
+  vault_enabled = true
+  vault_address = "https://vault.${local.domain_name}"
+  
+  # Monitoring
+  enable_monitoring    = true
+  prometheus_enabled   = true
+  grafana_enabled     = true
+  
+  # Logging
+  enable_log_forwarding = true
+  log_destination      = "cloudwatch"
+  
+  # Auto Scaling
+  enable_autoscaling = true
+  min_client_nodes   = 3
+  max_client_nodes   = 20
+  
+  # Storage
+  enable_csi_drivers = true
+  ebs_csi_enabled   = true
+  efs_csi_enabled   = true
+  
+  # Load Balancing
+  enable_alb          = true
+  enable_internal_alb = true
+  
+  # DNS
+  route53_zone_id = var.route53_zone_id
+  domain_name     = local.domain_name
+  
+  # Tags
+  common_tags = {
+    Environment   = local.environment
+    Project      = "gengine"
+    ManagedBy    = "terragrunt"
+    Component    = "nomad-cluster"
+    CostCenter   = "engineering"
+  }
+  
+  # Backup and DR
+  enable_backups     = true
+  backup_schedule    = "0 2 * * *"  # Daily at 2 AM
+  retention_period   = 30
+  
+  # Security Scanning
+  enable_security_scanning = true
+  vulnerability_scanning   = true
+  
+  # Networking Security
+  enable_vpc_flow_logs = true
+  enable_waf          = true
+  
+  # Compliance
+  enable_cloudtrail = true
+  enable_config     = true
+}
+
+locals {
+  environment = read_terragrunt_config(find_in_parent_folders("env.hcl")).locals.environment
+  aws_region  = read_terragrunt_config(find_in_parent_folders("region.hcl")).locals.aws_region
+  domain_name = "gengine.${local.environment}.company.com"
+}
