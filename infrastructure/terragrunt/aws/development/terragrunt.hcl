@@ -72,7 +72,8 @@ inputs = {
 
   # App Runner configuration (simple deployment alternative)
   enable_app_runner     = true
-  app_runner_image_uri  = "549574275832.dkr.ecr.us-west-2.amazonaws.com/gengine-rest-api:amd64"
+  # Image URI will be overridden by TF_VAR_app_runner_image_uri environment variable during deployment
+  app_runner_image_uri  = "549574275832.dkr.ecr.us-west-2.amazonaws.com/gengine-rest-api-to-mcp:latest"
   app_runner_cpu        = "0.25 vCPU"
   app_runner_memory     = "0.5 GB"
   app_runner_log_level  = "INFO"

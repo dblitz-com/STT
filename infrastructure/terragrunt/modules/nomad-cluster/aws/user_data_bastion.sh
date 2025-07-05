@@ -63,7 +63,7 @@ cat > /opt/webhook/config/hooks.json << 'EOL'
         {
           "match": {
             "type": "value",
-            "value": "refs/heads/feature/clean-mcp-restructure",
+            "value": "refs/heads/dev",
             "parameter": {
               "source": "payload",
               "name": "ref"
@@ -253,11 +253,48 @@ if [ -f "$REPO_DIR/TRIGGER_SELF_UPDATE" ]; then
     rm -f "$REPO_DIR/TRIGGER_SELF_UPDATE"
 fi
 
+# Update submodules to latest commits
+echo "$(date): Updating git submodules..." >> /opt/webhook/logs/deployment.log
+git submodule update --init --recursive --remote >> /opt/webhook/logs/deployment.log 2>&1
+
+# Build and push gengine-rest-api-to-mcp Docker image
+echo "$(date): Building gengine-rest-api-to-mcp Docker image..." >> /opt/webhook/logs/deployment.log
+cd src/gengines/gengine-rest-api-to-mcp
+
+# Get AWS account ID and region
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region)
+ECR_REPO="gengine-rest-api-to-mcp"
+IMAGE_TAG="${COMMIT_SHA:0:7}"
+
+# Login to ECR
+echo "$(date): Logging into ECR..." >> /opt/webhook/logs/deployment.log
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+# Create ECR repository if it doesn't exist
+aws ecr describe-repositories --repository-names $ECR_REPO --region $AWS_REGION 2>/dev/null || \
+    aws ecr create-repository --repository-name $ECR_REPO --region $AWS_REGION >> /opt/webhook/logs/deployment.log 2>&1
+
+# Build Docker image
+echo "$(date): Building Docker image..." >> /opt/webhook/logs/deployment.log
+docker build -t $ECR_REPO:$IMAGE_TAG -t $ECR_REPO:latest . >> /opt/webhook/logs/deployment.log 2>&1
+
+# Tag and push to ECR
+echo "$(date): Pushing to ECR..." >> /opt/webhook/logs/deployment.log
+docker tag $ECR_REPO:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+docker tag $ECR_REPO:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG >> /opt/webhook/logs/deployment.log 2>&1
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest >> /opt/webhook/logs/deployment.log 2>&1
+
+# Navigate back to repository root
+cd "$REPO_DIR"
+
 # Navigate to Terragrunt directory
 cd infrastructure/terragrunt/aws/development
 
-# Run Terragrunt deployment
+# Update Terragrunt with new image URI
 echo "$(date): Running terragrunt apply for App Runner deployment" >> /opt/webhook/logs/deployment.log
+export TF_VAR_app_runner_image_uri="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG"
 terragrunt apply -auto-approve >> /opt/webhook/logs/deployment.log 2>&1
 
 # Health check

@@ -168,6 +168,16 @@ gcp-credentials.env
 azure-credentials.env
 gcp-service-account.json
 
+# Terraform and Terragrunt
+.terraform/
+.terragrunt-cache/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.tfvars
+.terraform.lock.hcl
+tfplan
+
 # Act local testing (keep examples, exclude actual config)
 .secrets.local
 .env.local
