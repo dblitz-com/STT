@@ -69,6 +69,13 @@ inputs = {
   # Load balancer
   enable_alb = true
   enable_internal_alb = false
+
+  # App Runner configuration (simple deployment alternative)
+  enable_app_runner     = true
+  app_runner_image_uri  = "549574275832.dkr.ecr.us-west-2.amazonaws.com/gengine-rest-api:amd64"
+  app_runner_cpu        = "0.25 vCPU"
+  app_runner_memory     = "0.5 GB"
+  app_runner_log_level  = "INFO"
   
   # Common tags
   common_tags = {

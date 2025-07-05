@@ -57,3 +57,18 @@ output "bastion_public_ip" {
   description = "Public IP of the bastion host"
   value       = var.enable_bastion ? aws_instance.bastion[0].public_ip : ""
 }
+
+output "webhook_url" {
+  description = "URL for GitHub webhook"
+  value       = var.enable_bastion ? "http://${aws_instance.bastion[0].public_ip}:9000/hooks/terragrunt-deploy" : ""
+}
+
+output "app_runner_service_url" {
+  description = "URL of the App Runner service"
+  value       = var.enable_app_runner ? "https://${aws_apprunner_service.gengine_api[0].service_url}" : ""
+}
+
+output "app_runner_service_arn" {
+  description = "ARN of the App Runner service"
+  value       = var.enable_app_runner ? aws_apprunner_service.gengine_api[0].arn : ""
+}

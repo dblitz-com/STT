@@ -772,3 +772,96 @@ resource "aws_route53_record" "api" {
     evaluate_target_health = true
   }
 }
+
+# App Runner Service (Simple deployment alternative)
+resource "aws_apprunner_service" "gengine_api" {
+  count = var.enable_app_runner ? 1 : 0
+
+  service_name = "${var.cluster_name}-gengine-api"
+
+  source_configuration {
+    image_repository {
+      image_identifier      = var.app_runner_image_uri
+      image_configuration {
+        port = "8000"
+        runtime_environment_variables = {
+          LOG_LEVEL   = var.app_runner_log_level
+          ENVIRONMENT = var.cluster_name
+        }
+      }
+      image_repository_type = "ECR"
+    }
+    authentication_configuration {
+      access_role_arn = aws_iam_role.app_runner_access[0].arn
+    }
+    auto_deployments_enabled = false
+  }
+
+  instance_configuration {
+    cpu    = var.app_runner_cpu
+    memory = var.app_runner_memory
+    instance_role_arn = aws_iam_role.app_runner_instance[0].arn
+  }
+
+  health_check_configuration {
+    protocol            = "HTTP"
+    path                = "/health"
+    interval            = 10
+    timeout             = 5
+    healthy_threshold   = 1
+    unhealthy_threshold = 5
+  }
+
+  tags = var.common_tags
+}
+
+# App Runner access role for ECR authentication
+resource "aws_iam_role" "app_runner_access" {
+  count = var.enable_app_runner ? 1 : 0
+  
+  name = "${var.cluster_name}-app-runner-access-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "build.apprunner.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "app_runner_access" {
+  count = var.enable_app_runner ? 1 : 0
+  
+  role       = aws_iam_role.app_runner_access[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
+}
+
+# App Runner instance role (for runtime permissions)
+resource "aws_iam_role" "app_runner_instance" {
+  count = var.enable_app_runner ? 1 : 0
+  
+  name = "${var.cluster_name}-app-runner-instance-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "tasks.apprunner.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.common_tags
+}

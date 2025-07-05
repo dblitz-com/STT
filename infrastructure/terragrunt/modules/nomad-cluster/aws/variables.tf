@@ -234,3 +234,34 @@ variable "enable_config" {
   type        = bool
   default     = true
 }
+
+# App Runner Variables
+variable "enable_app_runner" {
+  description = "Enable AWS App Runner service for simple deployment"
+  type        = bool
+  default     = false
+}
+
+variable "app_runner_image_uri" {
+  description = "Container image URI for App Runner service"
+  type        = string
+  default     = "ghcr.io/dblitz-com/gengine-mcp-catalog/gengine-rest-api:latest"
+}
+
+variable "app_runner_cpu" {
+  description = "CPU allocation for App Runner service"
+  type        = string
+  default     = "0.25 vCPU"
+}
+
+variable "app_runner_memory" {
+  description = "Memory allocation for App Runner service"
+  type        = string
+  default     = "0.5 GB"
+}
+
+variable "app_runner_log_level" {
+  description = "Log level for App Runner service"
+  type        = string
+  default     = "INFO"
+}

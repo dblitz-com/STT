@@ -220,6 +220,145 @@ jobs:
           fail-build: false
           severity-cutoff: high
 
+  # DISABLED: Deploy to App Runner (replaced by webhook automation)
+  # deploy-app-runner:
+  #   name: Deploy to App Runner
+  #   runs-on: ubuntu-latest
+  #   needs: [build, container-scan]
+  #   if: github.ref == 'refs/heads/feature/clean-mcp-restructure' || contains(github.event.head_commit.message, '[app-runner]')
+  #   environment:
+  #     name: app-runner-dev
+  #     url: https://gengine-rest-api-dev.us-west-2.awsapprunner.com
+
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ vars.AWS_REGION }}
+  #
+  #     - name: Create App Runner service configuration
+  #       run: |
+  #         cat > apprunner.yaml << EOF
+  #         version: 1.0
+  #         runtime: docker
+  #         build:
+  #           commands:
+  #             build:
+  #               - echo "Using pre-built image from registry"
+  #         run:
+  #           runtime-version: latest
+  #           command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+  #           network:
+  #             port: 8000
+  #             env: PORT
+  #           env:
+  #             - name: PORT
+  #               value: "8000"
+  #             - name: LOG_LEVEL
+  #               value: "INFO"
+  #             - name: ENVIRONMENT
+  #               value: "app-runner-dev"
+  #         EOF
+  #
+  #     - name: Deploy to App Runner
+  #       run: |
+  #         # Check if service exists
+  #         SERVICE_NAME="gengine-rest-api-dev"
+  #         if aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" --output text | grep -q .; then
+  #           echo "Updating existing App Runner service..."
+  #           SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" --output text)
+  #           aws apprunner update-service \
+  #             --service-arn "$SERVICE_ARN" \
+  #             --source-configuration '{
+  #               "ImageRepository": {
+  #                 "ImageIdentifier": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}",
+  #                 "ImageConfiguration": {
+  #                   "Port": "8000",
+  #                   "RuntimeEnvironmentVariables": {
+  #                     "LOG_LEVEL": "INFO",
+  #                     "ENVIRONMENT": "app-runner-dev"
+  #                   }
+  #                 },
+  #                 "ImageRepositoryType": "ECR_PUBLIC"
+  #               },
+  #               "AutoDeploymentsEnabled": false
+  #             }' \
+  #             --instance-configuration '{
+  #               "Cpu": "0.25 vCPU",
+  #               "Memory": "0.5 GB"
+  #             }'
+  #         else
+  #           echo "Creating new App Runner service..."
+  #           aws apprunner create-service \
+  #             --service-name "$SERVICE_NAME" \
+  #             --source-configuration '{
+  #               "ImageRepository": {
+  #                 "ImageIdentifier": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}",
+  #                 "ImageConfiguration": {
+  #                   "Port": "8000",
+  #                   "RuntimeEnvironmentVariables": {
+  #                     "LOG_LEVEL": "INFO",
+  #                     "ENVIRONMENT": "app-runner-dev"
+  #                   }
+  #                 },
+  #                 "ImageRepositoryType": "ECR_PUBLIC"
+  #               },
+  #               "AutoDeploymentsEnabled": false
+  #             }' \
+  #             --instance-configuration '{
+  #               "Cpu": "0.25 vCPU",
+  #               "Memory": "0.5 GB"
+  #             }' \
+  #             --health-check-configuration '{
+  #               "Protocol": "HTTP",
+  #               "Path": "/health",
+  #               "Interval": 10,
+  #               "Timeout": 5,
+  #               "HealthyThreshold": 1,
+  #               "UnhealthyThreshold": 5
+  #             }'
+  #         fi
+  #
+  #     - name: Wait for App Runner deployment
+  #       run: |
+  #         SERVICE_NAME="gengine-rest-api-dev"
+  #         SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" --output text)
+  #         
+  #         echo "Waiting for App Runner service to be running..."
+  #         timeout 600 bash -c 'while true; do
+  #           STATUS=$(aws apprunner describe-service --service-arn "'$SERVICE_ARN'" --query "Service.Status" --output text)
+  #           echo "Service status: $STATUS"
+  #           if [ "$STATUS" = "RUNNING" ]; then
+  #             echo "Service is running!"
+  #             break
+  #           elif [ "$STATUS" = "CREATE_FAILED" ] || [ "$STATUS" = "UPDATE_FAILED" ]; then
+  #             echo "Service deployment failed!"
+  #             exit 1
+  #           fi
+  #           sleep 30
+  #         done'
+  #
+  #     - name: Get App Runner service URL
+  #       id: get-url
+  #       run: |
+  #         SERVICE_NAME="gengine-rest-api-dev"
+  #         SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$SERVICE_NAME'].ServiceArn" --output text)
+  #         SERVICE_URL=$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query "Service.ServiceUrl" --output text)
+  #         echo "SERVICE_URL=https://$SERVICE_URL" >> $GITHUB_OUTPUT
+  #         echo "App Runner service URL: https://$SERVICE_URL"
+  #
+  #     - name: Run smoke tests
+  #       run: |
+  #         sleep 60  # Give the service time to fully start
+  #         curl -f ${{ steps.get-url.outputs.SERVICE_URL }}/health || exit 1
+  #         curl -f ${{ steps.get-url.outputs.SERVICE_URL }}/docs || exit 1
+  #         echo "✅ App Runner deployment successful!"
+
   # Deploy to development environment
   deploy-dev:
     name: Deploy to Development
