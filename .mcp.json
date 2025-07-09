@@ -61,16 +61,19 @@
         "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
       }
     },
-    "gengine-rest-api-to-mcp": {
-      "type": "http",
-      "url": "http://localhost:8001/mcp"
-    },
-    "chrome-mcp-stdio": {
-      "command": "npx",
+    "github": {
+      "command": "docker",
       "args": [
-        "node",
-        "/Users/devin/.nvm/versions/node/v22.17.0/lib/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js"
-      ]
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
     }
   }
 }
