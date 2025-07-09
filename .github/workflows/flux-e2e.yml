@@ -2,10 +2,18 @@ name: Flux End-to-End Testing
 
 on:
   pull_request:
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/flux-validation.yml'
+      - '.github/workflows/flux-e2e.yml'
   push:
     branches:
       - main
       - dev
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/flux-validation.yml'
+      - '.github/workflows/flux-e2e.yml'
 
 jobs:
   e2e-staging:
