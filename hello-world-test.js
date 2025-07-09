@@ -14,6 +14,7 @@ console.log('🎉 Hello World from GitOps Workflow Test! (Updated)');
 console.log('✅ This change should flow smoothly through our optimized pipeline');
 console.log('🚀 Testing: Feature → Dev → Main branch protection');
 console.log('🔄 Update: Testing workflow with a simple low-risk change');
+console.log('🤖 Auto-merge test: This should merge automatically to dev!');
 
 // Simple test function
 function testGitOpsWorkflow() {
