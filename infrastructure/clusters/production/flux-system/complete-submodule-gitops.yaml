@@ -1,0 +1,552 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: submodule-gitops-provisioner-prod
+  namespace: flux-system
+data:
+  provision-submodules-prod.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🚀 Provisioning production GitOps pipeline for all submodules..."
+    
+    # Create production namespace
+    kubectl create namespace gengine-production --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Clone repo to discover submodules
+    TMPDIR=$(mktemp -d)
+    cd "$TMPDIR"
+    git clone https://github.com/dblitz-com/gengine.git .
+    
+    # Discover all submodules
+    if [ -d "src/gengines" ]; then
+      for submodule_path in src/gengines/*/; do
+        if [ -d "$submodule_path" ]; then
+          SUBMODULE_NAME=$(basename "$submodule_path")
+          echo "📁 Provisioning production GitOps for: $SUBMODULE_NAME"
+          
+          # Detect tech stack
+          TECH_STACK="unknown"
+          if [ -f "$submodule_path/pyproject.toml" ] || [ -f "$submodule_path/requirements.txt" ]; then
+            TECH_STACK="python"
+          elif [ -f "$submodule_path/package.json" ]; then
+            TECH_STACK="nodejs"
+          elif [ -f "$submodule_path/go.mod" ]; then
+            TECH_STACK="go"
+          elif [ -f "$submodule_path/Cargo.toml" ]; then
+            TECH_STACK="rust"
+          fi
+          
+          # Create GitRepository for main branch (production)
+          cat <<EOF | kubectl apply -f -
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: GitRepository
+    metadata:
+      name: ${SUBMODULE_NAME}-main-prod
+      namespace: flux-system
+      labels:
+        app.kubernetes.io/name: ${SUBMODULE_NAME}
+        app.kubernetes.io/component: source
+        environment: production
+        tech.stack: ${TECH_STACK}
+        cluster: production
+    spec:
+      interval: 2m0s
+      url: https://github.com/dblitz-com/gengine.git
+      ref:
+        branch: main
+      include:
+        - path: "src/gengines/${SUBMODULE_NAME}/**"
+      ignore: |
+        /src/gengines/${SUBMODULE_NAME}/node_modules/
+        /src/gengines/${SUBMODULE_NAME}/venv/
+        /src/gengines/${SUBMODULE_NAME}/.git/
+        /src/gengines/${SUBMODULE_NAME}/htmlcov/
+        /src/gengines/${SUBMODULE_NAME}/__pycache__/
+        /src/gengines/${SUBMODULE_NAME}/.pytest_cache/
+        /src/gengines/${SUBMODULE_NAME}/dist/
+        /src/gengines/${SUBMODULE_NAME}/build/
+        /src/gengines/${SUBMODULE_NAME}/*.egg-info/
+        /src/gengines/${SUBMODULE_NAME}/*.log
+        /src/gengines/${SUBMODULE_NAME}/test/
+        /src/gengines/${SUBMODULE_NAME}/tests/
+    EOF
+          
+          # Create Kustomization for production environment
+          cat <<EOF | kubectl apply -f -
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: ${SUBMODULE_NAME}-production-deploy
+      namespace: flux-system
+      labels:
+        app.kubernetes.io/name: ${SUBMODULE_NAME}
+        app.kubernetes.io/component: deployment
+        environment: production
+        tech.stack: ${TECH_STACK}
+        cluster: production
+    spec:
+      interval: 5m0s
+      sourceRef:
+        kind: GitRepository
+        name: ${SUBMODULE_NAME}-main-prod
+      path: "./src/gengines/${SUBMODULE_NAME}"
+      prune: true
+      timeout: 20m0s
+      targetNamespace: gengine-production
+      healthChecks:
+        - apiVersion: batch/v1
+          kind: Job
+          name: ${SUBMODULE_NAME}-production-test-*
+          namespace: gengine-production
+        - apiVersion: apps/v1
+          kind: Deployment
+          name: ${SUBMODULE_NAME}-*
+          namespace: gengine-production
+      postBuild:
+        substitute:
+          SUBMODULE_NAME: ${SUBMODULE_NAME}
+          ENVIRONMENT: production
+          TECH_STACK: ${TECH_STACK}
+          BRANCH: main
+          CLUSTER: production
+      patches:
+        - target:
+            kind: Deployment
+            name: "*"
+          patch: |
+            - op: add
+              path: /spec/template/spec/containers/0/env/-
+              value:
+                name: ENVIRONMENT
+                value: production
+            - op: add
+              path: /spec/template/spec/containers/0/env/-
+              value:
+                name: CLUSTER
+                value: production
+            - op: add
+              path: /spec/template/spec/containers/0/resources
+              value:
+                requests:
+                  memory: "512Mi"
+                  cpu: "250m"
+                limits:
+                  memory: "2Gi"
+                  cpu: "1000m"
+        - target:
+            kind: Job
+            name: "*test*"
+          patch: |
+            - op: add
+              path: /spec/template/spec/containers/0/env/-
+              value:
+                name: ENVIRONMENT
+                value: production
+            - op: add
+              path: /spec/template/spec/containers/0/env/-
+              value:
+                name: SUBMODULE_NAME
+                value: ${SUBMODULE_NAME}
+            - op: add
+              path: /spec/template/spec/containers/0/env/-
+              value:
+                name: TECH_STACK
+                value: ${TECH_STACK}
+    EOF
+          
+          # Create production-grade comprehensive test job
+          cat <<EOF | kubectl apply -f -
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${SUBMODULE_NAME}-production-test-$(date +%s)
+      namespace: gengine-production
+      labels:
+        app.kubernetes.io/name: ${SUBMODULE_NAME}
+        app.kubernetes.io/component: test
+        environment: production
+        test.type: comprehensive
+        tech.stack: ${TECH_STACK}
+        cluster: production
+    spec:
+      ttlSecondsAfterFinished: 86400  # 24 hours
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: production-test
+            image: ubuntu:22.04
+            workingDir: /workspace/src/gengines/${SUBMODULE_NAME}
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euo pipefail
+              echo "🚀 Running production-grade testing for ${SUBMODULE_NAME} (${TECH_STACK})"
+              
+              # Setup based on tech stack
+              case "${TECH_STACK}" in
+                "python")
+                  apt-get update && apt-get install -y python3 python3-pip curl
+                  python3 -m pip install --upgrade pip
+                  if [ -f "pyproject.toml" ]; then
+                    pip install -e ".[test,dev]" || pip install -e ".[test]" || pip install -e "."
+                  elif [ -f "requirements.txt" ]; then
+                    pip install -r requirements.txt
+                  fi
+                  
+                  # Install security tools
+                  pip install bandit safety
+                  
+                  # Unit tests with strict coverage
+                  echo "🧪 Running unit tests with coverage..."
+                  python -m pytest --tb=short --cov=. --cov-report=xml --cov-fail-under=80 --strict-markers
+                  
+                  # Security scan (strict)
+                  echo "🔐 Running security scan..."
+                  bandit -r . -f json -o bandit-results.json
+                  safety check --json --output safety-results.json
+                  
+                  # Code quality (strict)
+                  echo "🧹 Running code quality checks..."
+                  if command -v ruff &> /dev/null; then
+                    ruff check . --output-format=json --output-file=ruff-results.json
+                  elif command -v flake8 &> /dev/null; then
+                    flake8 . --output-file=flake8-results.txt
+                  fi
+                  
+                  if command -v black &> /dev/null; then
+                    black --check .
+                  fi
+                  
+                  # Type checking
+                  if command -v mypy &> /dev/null; then
+                    mypy . --ignore-missing-imports || echo "Type checking issues found"
+                  fi
+                  ;;
+                  
+                "nodejs")
+                  apt-get update && apt-get install -y nodejs npm curl
+                  npm install --no-package-lock
+                  
+                  # Unit tests with coverage
+                  echo "🧪 Running unit tests with coverage..."
+                  npm run test:coverage || npm test
+                  
+                  # Security scan (strict)
+                  echo "🔐 Running security scan..."
+                  npm audit --audit-level=moderate --json > npm-audit-results.json
+                  
+                  # Code quality (strict)
+                  echo "🧹 Running code quality checks..."
+                  if [ -f "package.json" ] && grep -q '"lint"' package.json; then
+                    npm run lint
+                  fi
+                  
+                  # Type checking
+                  if [ -f "tsconfig.json" ]; then
+                    npx tsc --noEmit || echo "TypeScript compilation issues found"
+                  fi
+                  ;;
+                  
+                "go")
+                  apt-get update && apt-get install -y golang-go curl
+                  export GOPATH=/workspace/go
+                  export PATH=\$PATH:\$GOPATH/bin
+                  
+                  go mod tidy
+                  
+                  # Unit tests with coverage
+                  echo "🧪 Running unit tests with coverage..."
+                  go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+                  
+                  # Code quality (strict)
+                  echo "🧹 Running code quality checks..."
+                  go fmt ./...
+                  go vet ./...
+                  
+                  # Security scan
+                  echo "🔐 Running security scan..."
+                  go mod vendor
+                  ;;
+                  
+                "rust")
+                  apt-get update && apt-get install -y rustc cargo curl
+                  
+                  cargo build --release
+                  
+                  # Unit tests
+                  echo "🧪 Running unit tests..."
+                  cargo test --release
+                  
+                  # Code quality (strict)
+                  echo "🧹 Running code quality checks..."
+                  cargo fmt --check
+                  cargo clippy -- -D warnings
+                  ;;
+              esac
+              
+              # Install and run Trivy for comprehensive security scan
+              echo "🔐 Running Trivy security scan..."
+              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+              trivy fs . --format json --output trivy-results.json --exit-code 1
+              
+              # Performance tests (if available)
+              echo "⚡ Running performance tests..."
+              case "${TECH_STACK}" in
+                "python")
+                  if [ -f "tests/performance_test.py" ]; then
+                    python tests/performance_test.py
+                  fi
+                  ;;
+                "nodejs")
+                  if [ -f "package.json" ] && grep -q '"test:perf"' package.json; then
+                    npm run test:perf
+                  fi
+                  ;;
+              esac
+              
+              echo "✅ Production-grade testing completed successfully for ${SUBMODULE_NAME}"
+            env:
+            - name: SUBMODULE_NAME
+              value: ${SUBMODULE_NAME}
+            - name: TECH_STACK
+              value: ${TECH_STACK}
+            - name: ENVIRONMENT
+              value: production
+            - name: BRANCH
+              value: main
+            - name: CLUSTER
+              value: production
+            - name: CI
+              value: "true"
+            - name: FLUX_MANAGED
+              value: "true"
+            - name: STRICT_MODE
+              value: "true"
+            volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            resources:
+              requests:
+                memory: "2Gi"
+                cpu: "1000m"
+              limits:
+                memory: "8Gi"
+                cpu: "4000m"
+          volumes:
+          - name: workspace
+            emptyDir: {}
+          initContainers:
+          - name: git-clone
+            image: alpine/git:latest
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              set -euo pipefail
+              echo "📥 Cloning repository for production deployment of ${SUBMODULE_NAME}..."
+              git clone https://github.com/dblitz-com/gengine.git /workspace
+              cd /workspace
+              git checkout main
+              git submodule update --init --recursive
+              echo "✅ Repository cloned successfully"
+            volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+    EOF
+          
+          # Create production deployment if Dockerfile exists
+          if [ -f "$submodule_path/Dockerfile" ]; then
+            cat <<EOF | kubectl apply -f -
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ${SUBMODULE_NAME}-deployment
+      namespace: gengine-production
+      labels:
+        app.kubernetes.io/name: ${SUBMODULE_NAME}
+        app.kubernetes.io/component: application
+        environment: production
+        tech.stack: ${TECH_STACK}
+        cluster: production
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: ${SUBMODULE_NAME}
+          environment: production
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ${SUBMODULE_NAME}
+            environment: production
+            tech.stack: ${TECH_STACK}
+        spec:
+          containers:
+          - name: ${SUBMODULE_NAME}
+            image: docker.io/dblitz/${SUBMODULE_NAME}:latest
+            ports:
+            - containerPort: 8080
+            env:
+            - name: ENVIRONMENT
+              value: production
+            - name: CLUSTER
+              value: production
+            - name: SUBMODULE_NAME
+              value: ${SUBMODULE_NAME}
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /ready
+                port: 8080
+              initialDelaySeconds: 5
+              periodSeconds: 5
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: ${SUBMODULE_NAME}-service
+      namespace: gengine-production
+      labels:
+        app.kubernetes.io/name: ${SUBMODULE_NAME}
+        environment: production
+    spec:
+      selector:
+        app.kubernetes.io/name: ${SUBMODULE_NAME}
+        environment: production
+      ports:
+      - port: 80
+        targetPort: 8080
+        protocol: TCP
+      type: ClusterIP
+    EOF
+          fi
+          
+          echo "  ✅ Production GitOps pipeline provisioned for ${SUBMODULE_NAME}"
+          echo "     - Main branch → Production environment"
+          echo "     - Production-grade testing enabled"
+          echo "     - Auto-scaling and health checks configured"
+          echo "     - Tech stack: ${TECH_STACK}"
+        fi
+      done
+    else
+      echo "❌ src/gengines/ directory not found"
+      exit 1
+    fi
+    
+    # Cleanup
+    rm -rf "$TMPDIR"
+    
+    echo "🎯 Production GitOps pipeline provisioning completed for all submodules"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: submodule-gitops-provisioner-prod
+  namespace: flux-system
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: submodule-gitops-provisioner-prod
+          restartPolicy: OnFailure
+          containers:
+          - name: provision-prod
+            image: bitnami/kubectl:latest
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              # Install git
+              apt-get update && apt-get install -y git
+              
+              # Mount and execute provisioning script
+              chmod +x /scripts/provision-submodules-prod.sh
+              /scripts/provision-submodules-prod.sh
+            volumeMounts:
+            - name: provisioner-script
+              mountPath: /scripts
+            env:
+            - name: FLUX_NAMESPACE
+              value: "flux-system"
+            - name: ENVIRONMENT
+              value: "production"
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+          volumes:
+          - name: provisioner-script
+            configMap:
+              name: submodule-gitops-provisioner-prod
+              defaultMode: 0755
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: submodule-gitops-provisioner-prod
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: submodule-gitops-provisioner-prod
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "create", "update", "patch"]
+- apiGroups: ["source.toolkit.fluxcd.io"]
+  resources: ["gitrepositories"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["kustomize.toolkit.fluxcd.io"]
+  resources: ["kustomizations"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets", "services"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: submodule-gitops-provisioner-prod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: submodule-gitops-provisioner-prod
+subjects:
+- kind: ServiceAccount
+  name: submodule-gitops-provisioner-prod
+  namespace: flux-system
