@@ -1,0 +1,267 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gengine-submodules-dynamic
+  namespace: flux-system
+spec:
+  interval: 30s
+  url: https://github.com/dblitz-com/gengine.git
+  ref:
+    branch: dev
+  include:
+    - repository: 
+        name: "gengine-*"
+        kind: GitRepository
+    - path: "src/gengines/**"
+  ignore: |
+    # Ignore non-essential files for faster sync
+    /*
+    !/src/gengines/
+    /src/gengines/*/node_modules/
+    /src/gengines/*/venv/
+    /src/gengines/*/.git/
+    /src/gengines/*/htmlcov/
+    /src/gengines/*/__pycache__/
+    /src/gengines/*/.pytest_cache/
+    /src/gengines/*/.mypy_cache/
+    /src/gengines/*/dist/
+    /src/gengines/*/build/
+    /src/gengines/*/*.egg-info/
+    /src/gengines/*/*.log
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gengine-submodules-auto-discovery
+  namespace: flux-system
+spec:
+  interval: 1m0s
+  sourceRef:
+    kind: GitRepository
+    name: gengine-submodules-dynamic
+  path: "./src/gengines"
+  prune: true
+  timeout: 10m0s
+  healthChecks:
+    - apiVersion: batch/v1
+      kind: Job
+      name: submodule-test-*
+      namespace: gengine-testing
+  postBuild:
+    substitute:
+      ENVIRONMENT: "staging"
+      REGISTRY: "docker.io"
+      NAMESPACE: "gengine-testing"
+  patches:
+    - target:
+        kind: Job
+        name: "*-test"
+      patch: |
+        - op: add
+          path: /spec/template/spec/containers/0/env/-
+          value:
+            name: ENVIRONMENT
+            value: staging
+        - op: add
+          path: /spec/template/spec/containers/0/env/-
+          value:
+            name: FLUX_MANAGED
+            value: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: submodule-discovery-script
+  namespace: flux-system
+data:
+  discover-submodules.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🔍 Discovering submodules in src/gengines/ directory..."
+    
+    # Create namespace if it doesn't exist
+    kubectl create namespace gengine-testing --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Find all directories in src/gengines/
+    if [ -d "src/gengines" ]; then
+      for submodule_path in src/gengines/*/; do
+        if [ -d "$submodule_path" ]; then
+          submodule_name=$(basename "$submodule_path")
+          echo "📁 Found submodule: $submodule_name"
+          
+          # Detect tech stack
+          tech_stack="unknown"
+          test_command="echo 'No tests configured'"
+          
+          # Python detection
+          if [ -f "$submodule_path/pyproject.toml" ] || [ -f "$submodule_path/requirements.txt" ]; then
+            tech_stack="python"
+            test_command="python -m pytest --tb=short"
+          fi
+          
+          # Node.js detection
+          if [ -f "$submodule_path/package.json" ]; then
+            tech_stack="nodejs"
+            test_command="npm test"
+          fi
+          
+          # Create dynamic test job for each discovered submodule
+          cat <<EOF | kubectl apply -f -
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${submodule_name}-test-$(date +%s)
+      namespace: gengine-testing
+      labels:
+        app.kubernetes.io/name: ${submodule_name}
+        app.kubernetes.io/component: test
+        app.kubernetes.io/part-of: gengine-submodules
+        flux.toolkit.fluxcd.io/managed: "true"
+    spec:
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: test
+            image: ubuntu:22.04
+            workingDir: /workspace/${submodule_path}
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euo pipefail
+              echo "🧪 Testing ${submodule_name} (${tech_stack})"
+              
+              # Setup environment based on tech stack
+              case "${tech_stack}" in
+                "python")
+                  apt-get update && apt-get install -y python3 python3-pip
+                  python3 -m pip install --upgrade pip
+                  if [ -f "pyproject.toml" ]; then
+                    pip install -e ".[test]" || pip install -e "."
+                  elif [ -f "requirements.txt" ]; then
+                    pip install -r requirements.txt
+                  fi
+                  ;;
+                "nodejs")
+                  apt-get update && apt-get install -y nodejs npm
+                  npm install --no-package-lock
+                  ;;
+              esac
+              
+              # Run tests
+              echo "🚀 Running tests..."
+              ${test_command}
+              
+              echo "✅ Tests completed successfully for ${submodule_name}"
+            env:
+            - name: SUBMODULE_NAME
+              value: "${submodule_name}"
+            - name: TECH_STACK
+              value: "${tech_stack}"
+            - name: ENVIRONMENT
+              value: "staging"
+            - name: FLUX_MANAGED
+              value: "true"
+            volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          volumes:
+          - name: workspace
+            emptyDir: {}
+          initContainers:
+          - name: git-clone
+            image: alpine/git:latest
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              git clone https://github.com/dblitz-com/gengine.git /workspace
+              cd /workspace
+              git checkout dev
+              git submodule update --init --recursive
+            volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+    EOF
+          
+          echo "  ✅ Created test job for ${submodule_name}"
+        fi
+      done
+    else
+      echo "❌ src/gengines/ directory not found"
+      exit 1
+    fi
+    
+    echo "🎯 Submodule discovery and test job creation completed"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: submodule-discovery-cronjob
+  namespace: flux-system
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: submodule-discovery
+          restartPolicy: OnFailure
+          containers:
+          - name: discover
+            image: bitnami/kubectl:latest
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              # Mount and execute discovery script
+              chmod +x /scripts/discover-submodules.sh
+              /scripts/discover-submodules.sh
+            volumeMounts:
+            - name: discovery-script
+              mountPath: /scripts
+            env:
+            - name: FLUX_NAMESPACE
+              value: "flux-system"
+          volumes:
+          - name: discovery-script
+            configMap:
+              name: submodule-discovery-script
+              defaultMode: 0755
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: submodule-discovery
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: submodule-discovery
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "create", "update", "patch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: submodule-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: submodule-discovery
+subjects:
+- kind: ServiceAccount
+  name: submodule-discovery
+  namespace: flux-system
