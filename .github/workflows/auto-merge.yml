@@ -55,8 +55,13 @@ jobs:
           echo "review_decision=$REVIEW_DECISION" >> $GITHUB_OUTPUT
           
           # Check status checks
-          STATUS_CHECKS=$(echo "$PR_INFO" | jq -r '.statusCheckRollup[]? | select(.status == "COMPLETED" and .conclusion == "SUCCESS") | .context' | wc -l)
-          REQUIRED_CHECKS=2  # validate and e2e-staging
+          STATUS_CHECKS=$(echo "$PR_INFO" | jq -r '.statusCheckRollup[]? | select(.status == "COMPLETED" and .conclusion == "SUCCESS") | .name' | wc -l)
+          # For dev branch: require basic checks, for main: require comprehensive checks
+          if [ "$BASE_BRANCH" == "dev" ]; then
+            REQUIRED_CHECKS=1  # At least auto-pr check
+          else
+            REQUIRED_CHECKS=2  # More stringent for main
+          fi
           
           echo "status_checks_passed=$STATUS_CHECKS" >> $GITHUB_OUTPUT
           echo "required_checks=$REQUIRED_CHECKS" >> $GITHUB_OUTPUT
@@ -95,10 +100,11 @@ jobs:
             exit 0
           fi
           
-          # Check if approved
-          if [ "${{ steps.pr-info.outputs.review_decision }}" != "APPROVED" ]; then
+          # Check if approved (only required for main branch)
+          BASE_BRANCH="${{ steps.pr-info.outputs.base_branch }}"
+          if [ "$BASE_BRANCH" == "main" ] && [ "${{ steps.pr-info.outputs.review_decision }}" != "APPROVED" ]; then
             echo "can_merge=false" >> $GITHUB_OUTPUT
-            echo "reason=PR is not approved" >> $GITHUB_OUTPUT
+            echo "reason=Main branch PR requires approval" >> $GITHUB_OUTPUT
             exit 0
           fi
           
