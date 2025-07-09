@@ -11,6 +11,7 @@ permissions:
   contents: read
   security-events: write
   pull-requests: read
+  actions: read
 
 jobs:
   unit-tests:
@@ -26,26 +27,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Run JavaScript/TypeScript tests
         run: |
           echo "Running simple test..."
-          cd test && node -e "
-          const assert = require('assert');
-          try {
-            assert.strictEqual('Hello World', 'Hello World');
-            assert.strictEqual(2 + 2, 4);
-            console.log('✅ All tests passed!');
-            process.exit(0);
-          } catch (error) {
-            console.error('❌ Test failed:', error.message);
-            process.exit(1);
-          }
-          "
+          npm run test
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -83,6 +72,7 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   code-quality:
     name: Code Quality Checks
@@ -97,7 +87,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Run ESLint (if configured)
         run: |
@@ -134,21 +124,28 @@ jobs:
 
       - name: Build test container (if Dockerfile exists)
         run: |
-          if [ -f "Dockerfile" ]; then
-            docker build -t test-image:latest .
-          elif [ -f "src/webhook-server/Dockerfile" ]; then
+          if [ -f "src/webhook-server/Dockerfile" ]; then
+            echo "Building webhook server container..."
             cd src/webhook-server
             docker build -t test-webhook:latest .
           else
-            echo "No Dockerfile found, skipping container scan..."
-            exit 0
+            echo "Creating simple test container for security scan..."
+            cat > Dockerfile.test << 'EOF'
+          FROM node:20-alpine
+          WORKDIR /app
+          COPY package.json ./
+          RUN npm install --no-package-lock
+          COPY test/ ./test/
+          CMD ["npm", "test"]
+          EOF
+            docker build -f Dockerfile.test -t test-image:latest .
           fi
 
       - name: Run Trivy container scan
         if: success()
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'test-image:latest'
+          image-ref: ${{ hashFiles('src/webhook-server/Dockerfile') != '' && 'test-webhook:latest' || 'test-image:latest' }}
           format: 'sarif'
           output: 'container-trivy-results.sarif'
 
@@ -157,6 +154,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'container-trivy-results.sarif'
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   flux-validation:
     name: Flux Manifest Validation
