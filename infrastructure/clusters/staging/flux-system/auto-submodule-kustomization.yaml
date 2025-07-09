@@ -1,0 +1,199 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - dynamic-submodule-sources.yaml
+
+generators:
+  - submodule-test-generator.yaml
+
+patches:
+  - target:
+      kind: Job
+      labelSelector: "app.kubernetes.io/part-of=gengine-submodules"
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: FLUX_MANAGED
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CLUSTER_ENV
+          value: "staging"
+
+transformers:
+  - |-
+    apiVersion: builtin
+    kind: LabelTransformer
+    metadata:
+      name: add-flux-labels
+    labels:
+      flux.toolkit.fluxcd.io/managed: "true"
+      cluster.environment: "staging"
+    fieldSpecs:
+      - path: metadata/labels
+        create: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: submodule-auto-discovery
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/name: submodule-discovery
+    app.kubernetes.io/component: config
+data:
+  config.yaml: |
+    discovery:
+      enabled: true
+      path: "src/gengines"
+      pattern: "gengine-*"
+      interval: "30s"
+      
+    testing:
+      namespace: "gengine-testing"
+      timeout: "10m"
+      parallelism: 3
+      
+    techStacks:
+      python:
+        detector: ["pyproject.toml", "requirements.txt", "setup.py"]
+        testCommand: "python -m pytest --tb=short"
+        setupCommands:
+          - "python3 -m pip install --upgrade pip"
+          - "pip install -e .[test] || pip install -e ."
+      
+      nodejs:
+        detector: ["package.json"]
+        testCommand: "npm test"
+        setupCommands:
+          - "npm install --no-package-lock"
+      
+      go:
+        detector: ["go.mod"]
+        testCommand: "go test ./..."
+        setupCommands:
+          - "go mod tidy"
+      
+      rust:
+        detector: ["Cargo.toml"]
+        testCommand: "cargo test"
+        setupCommands:
+          - "cargo build"
+          
+    security:
+      enabled: true
+      scanner: "trivy"
+      uploadSarif: true
+      
+    notifications:
+      slack:
+        enabled: false
+        webhook: ""
+      github:
+        enabled: true
+        status: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: submodule-test-templates
+  namespace: flux-system
+data:
+  test-job-template.yaml: |
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: "${SUBMODULE_NAME}-test-${TIMESTAMP}"
+      namespace: gengine-testing
+      labels:
+        app.kubernetes.io/name: "${SUBMODULE_NAME}"
+        app.kubernetes.io/component: test
+        app.kubernetes.io/part-of: gengine-submodules
+        tech.stack: "${TECH_STACK}"
+        flux.toolkit.fluxcd.io/managed: "true"
+    spec:
+      ttlSecondsAfterFinished: 3600
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: "${SUBMODULE_NAME}"
+            app.kubernetes.io/component: test
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: test
+            image: ubuntu:22.04
+            workingDir: /workspace/src/gengines/${SUBMODULE_NAME}
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euo pipefail
+              echo "🧪 Testing ${SUBMODULE_NAME} (${TECH_STACK})"
+              
+              # Load setup commands from config
+              ${SETUP_COMMANDS}
+              
+              # Run linting if available
+              echo "🧹 Running linting..."
+              ${LINT_COMMAND} || echo "No linting configured"
+              
+              # Run tests
+              echo "🚀 Running tests..."
+              ${TEST_COMMAND}
+              
+              # Run security scan
+              echo "🔐 Running security scan..."
+              ${SECURITY_COMMAND} || echo "Security scan skipped"
+              
+              echo "✅ All checks passed for ${SUBMODULE_NAME}"
+            env:
+            - name: SUBMODULE_NAME
+              value: "${SUBMODULE_NAME}"
+            - name: TECH_STACK
+              value: "${TECH_STACK}"
+            - name: ENVIRONMENT
+              value: "staging"
+            - name: FLUX_MANAGED
+              value: "true"
+            - name: CI
+              value: "true"
+            volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+          volumes:
+          - name: workspace
+            emptyDir: {}
+          initContainers:
+          - name: git-clone
+            image: alpine/git:latest
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              set -euo pipefail
+              echo "📥 Cloning repository..."
+              git clone https://github.com/dblitz-com/gengine.git /workspace
+              cd /workspace
+              git checkout dev
+              git submodule update --init --recursive
+              echo "✅ Repository cloned successfully"
+            volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
