@@ -1,0 +1,113 @@
+name: GitOps Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage-issue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Triage GitOps Issue
+        uses: anthropics/claude-code-action@beta
+        with:
+          direct_prompt: |
+            You're an issue triage assistant for the gengine GitOps project. Your task is to analyze the issue and select appropriate labels from the available labels.
+
+            **IMPORTANT: Don't post any comments or messages to the issue. Your only action should be to apply labels.**
+
+            **Project Context:**
+            - gengine project uses dynamic submodule GitOps provisioning with FluxCD
+            - Submodules: gengine-mcp-catalog, gengine-rest-api-to-mcp
+            - Two environments: staging (dev branch) and production (main branch)
+            - FluxCD auto-discovers and provisions GitOps pipelines every 2 minutes
+            - Infrastructure managed in infrastructure/clusters/
+
+            **Issue Information:**
+            - REPO: ${{ github.repository }}
+            - ISSUE_NUMBER: ${{ github.event.issue.number }}
+
+            **TASK OVERVIEW:**
+
+            1. **First, get available labels:** Run `gh label list` to see all available labels in this repository.
+
+            2. **Analyze the issue:** Use GitHub tools to understand the issue:
+               - Use GitHub MCP tools to get issue details, comments, and context
+               - Look for similar issues to understand patterns
+               - Analyze the issue content for technical indicators
+
+            3. **Categorize by type:** Look for indicators of:
+               - **bug** - Error reports, failures, unexpected behavior
+               - **enhancement** - Feature requests, improvements
+               - **question** - Questions, clarifications needed
+               - **documentation** - Docs improvements, missing docs
+               - **security** - Security vulnerabilities, compliance issues
+               - **performance** - Performance issues, optimization
+
+            4. **Categorize by GitOps area:** Look for mentions of:
+               - **fluxcd** - FluxCD controllers, reconciliation, sources
+               - **kubernetes** - K8s resources, deployments, services
+               - **gitops** - GitOps patterns, git workflow issues
+               - **helm** - Helm charts, HelmRelease issues
+               - **kustomize** - Kustomization, patches, overlays
+               - **monitoring** - Observability, metrics, alerts
+               - **security** - RBAC, policies, secrets
+
+            5. **Categorize by component:** Look for mentions of:
+               - **gengine-mcp-catalog** - MCP catalog service issues
+               - **gengine-rest-api-to-mcp** - REST API to MCP bridge issues
+               - **infrastructure** - Infrastructure code, clusters
+               - **submodule** - Submodule management, discovery
+               - **testing** - Testing pipelines, validation
+
+            6. **Categorize by environment:** Look for mentions of:
+               - **staging** - Staging environment issues
+               - **production** - Production environment issues
+               - **dev** - Development environment
+
+            7. **Categorize by priority:** Assess impact and urgency:
+               - **high-priority** - Production down, security vulnerabilities
+               - **medium-priority** - Features, non-critical bugs
+               - **low-priority** - Documentation, minor improvements
+
+            8. **Special categories:**
+               - **deployment-issue** - Deployment failures, rollbacks
+               - **duplicate** - Only if you find an identical open issue
+               - **wontfix** - Only if clearly out of scope
+               - **needs-info** - If more information is needed
+
+            **Apply selected labels using GitHub MCP tools. Do not post any comments.**
+
+            **Guidelines:**
+            - Be thorough in analysis
+            - Only use labels that exist in the repository
+            - Select 2-5 relevant labels typically
+            - Prioritize accuracy over quantity
+            - Focus on GitOps and cloud-native context
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          custom_instructions: |
+            You are triaging issues for the gengine GitOps project. Focus on GitOps, FluxCD, and Kubernetes patterns.
+            
+            Use sequential thinking to:
+            - Analyze the issue comprehensively
+            - Identify technical indicators
+            - Map to appropriate labels
+            - Avoid over-labeling or under-labeling
+            
+            Project specializes in:
+            - Dynamic submodule GitOps provisioning
+            - FluxCD automation
+            - Multi-environment deployments
+            - MCP (Model Context Protocol) services

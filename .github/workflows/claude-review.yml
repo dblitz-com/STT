@@ -1,0 +1,94 @@
+name: Auto GitOps PR Review
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  auto-review:
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Auto review GitOps PR
+        uses: anthropics/claude-code-action@beta
+        with:
+          direct_prompt: |
+            Please review this PR with a focus on GitOps and FluxCD best practices. This is the gengine project which uses dynamic submodule GitOps provisioning.
+
+            **Project Context:**
+            - Dynamic submodule GitOps with FluxCD auto-discovery
+            - Submodules in src/gengines/ (gengine-mcp-catalog, gengine-rest-api-to-mcp)
+            - Staging (dev branch) and production (main branch) deployments
+            - FluxCD provisions GitOps pipelines every 2 minutes
+            - Infrastructure in infrastructure/clusters/staging/ and infrastructure/clusters/production/
+
+            **Review Focus Areas:**
+
+            1. **GitOps Best Practices:**
+               - Declarative configuration
+               - Immutable infrastructure
+               - Proper separation of concerns
+               - Git as single source of truth
+
+            2. **FluxCD Specific:**
+               - GitRepository source configurations
+               - Kustomization resource structure
+               - HelmRelease configurations (if any)
+               - Flux reconciliation settings
+               - Dependency management between resources
+
+            3. **Kubernetes Manifests:**
+               - Resource definitions and best practices
+               - Security contexts and RBAC
+               - Resource requests and limits
+               - Probes and health checks
+               - ConfigMap and Secret management
+
+            4. **Infrastructure as Code:**
+               - Terraform configurations (if any)
+               - Kubernetes cluster configurations
+               - Network policies and security
+               - Monitoring and observability setup
+
+            5. **Submodule Integration:**
+               - Proper submodule structure
+               - Branch strategy (dev for staging, main for production)
+               - Testing pipeline integration
+               - Deployment automation
+
+            6. **Security:**
+               - Secret management
+               - Image security and scanning
+               - Network policies
+               - RBAC and service accounts
+               - Pod security standards
+
+            **Provide feedback on:**
+            - Code quality and GitOps patterns
+            - Potential deployment issues
+            - Security vulnerabilities
+            - Performance considerations
+            - FluxCD configuration correctness
+            - Kubernetes manifest validation
+            - Overall architecture decisions
+
+            Be constructive and specific. Give inline comments where applicable. Focus on GitOps and cloud-native best practices.
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          custom_instructions: |
+            You are reviewing a GitOps PR for the gengine project. Focus on FluxCD, Kubernetes, and GitOps best practices.
+            
+            Use sequential thinking for complex analysis of:
+            - Multi-environment deployments
+            - FluxCD resource dependencies
+            - Kubernetes security implications
+            - Infrastructure changes impact

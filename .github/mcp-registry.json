@@ -1,0 +1,390 @@
+{
+  "version": "1.0.0",
+  "registry": {
+    "flux": {
+      "name": "FluxCD GitOps Server",
+      "description": "Tools for FluxCD monitoring, troubleshooting, and GitOps operations",
+      "server_config": {
+        "command": "npx",
+        "args": ["@flux-mcp/server"],
+        "env": {
+          "KUBECONFIG": "${KUBECONFIG}",
+          "FLUX_NAMESPACE": "flux-system"
+        }
+      },
+      "tools": [
+        "flux_status",
+        "flux_logs",
+        "flux_reconcile",
+        "flux_get_sources",
+        "flux_get_kustomizations",
+        "flux_suspend",
+        "flux_resume",
+        "flux_get_alerts",
+        "flux_check_health"
+      ],
+      "dependencies": ["kubernetes"],
+      "conflicts": [],
+      "required_env": ["KUBECONFIG"],
+      "optional_env": ["FLUX_NAMESPACE"]
+    },
+    "monitoring": {
+      "name": "Prometheus & Grafana Monitoring Server",
+      "description": "Tools for metrics querying, dashboard creation, and alert management",
+      "server_config": {
+        "command": "npx",
+        "args": ["@monitoring-mcp/server"],
+        "env": {
+          "PROMETHEUS_URL": "${PROMETHEUS_URL}",
+          "GRAFANA_URL": "${GRAFANA_URL}",
+          "GRAFANA_TOKEN": "${GRAFANA_TOKEN}"
+        }
+      },
+      "tools": [
+        "prometheus_query",
+        "prometheus_query_range",
+        "grafana_create_dashboard",
+        "grafana_update_dashboard",
+        "grafana_get_dashboard",
+        "grafana_create_alert",
+        "grafana_list_alerts",
+        "grafana_get_datasources",
+        "grafana_create_annotation"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": ["PROMETHEUS_URL"],
+      "optional_env": ["GRAFANA_URL", "GRAFANA_TOKEN"]
+    },
+    "kubernetes": {
+      "name": "Kubernetes Cluster Operations",
+      "description": "Tools for Kubernetes cluster management and resource operations",
+      "server_config": {
+        "command": "npx",
+        "args": ["@kubernetes-mcp/server"],
+        "env": {
+          "KUBECONFIG": "${KUBECONFIG}",
+          "KUBERNETES_NAMESPACE": "${KUBERNETES_NAMESPACE}"
+        }
+      },
+      "tools": [
+        "kubectl_get",
+        "kubectl_describe",
+        "kubectl_logs",
+        "kubectl_apply",
+        "kubectl_delete",
+        "kubectl_scale",
+        "kubectl_rollout",
+        "kubectl_port_forward",
+        "kubectl_exec",
+        "kubectl_top"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": ["KUBECONFIG"],
+      "optional_env": ["KUBERNETES_NAMESPACE"]
+    },
+    "database": {
+      "name": "Database Operations Server",
+      "description": "Tools for database management, queries, and migrations",
+      "server_config": {
+        "command": "npx",
+        "args": ["@database-mcp/server"],
+        "env": {
+          "DATABASE_URL": "${DATABASE_URL}",
+          "DATABASE_TYPE": "${DATABASE_TYPE}"
+        }
+      },
+      "tools": [
+        "db_query",
+        "db_execute",
+        "db_migrate",
+        "db_seed",
+        "db_backup",
+        "db_restore",
+        "db_schema_diff",
+        "db_table_info",
+        "db_index_analyze",
+        "db_connection_test"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": ["DATABASE_URL"],
+      "optional_env": ["DATABASE_TYPE"]
+    },
+    "testing": {
+      "name": "Testing & Quality Assurance Server",
+      "description": "Tools for running tests, code quality checks, and CI/CD operations",
+      "server_config": {
+        "command": "npx",
+        "args": ["@testing-mcp/server"],
+        "env": {
+          "TEST_ENV": "${TEST_ENV}",
+          "COVERAGE_THRESHOLD": "${COVERAGE_THRESHOLD}"
+        }
+      },
+      "tools": [
+        "run_tests",
+        "run_coverage",
+        "run_linting",
+        "run_security_scan",
+        "run_performance_test",
+        "generate_test_report",
+        "check_code_quality",
+        "run_integration_tests",
+        "run_e2e_tests",
+        "validate_dependencies"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": [],
+      "optional_env": ["TEST_ENV", "COVERAGE_THRESHOLD"]
+    },
+    "security": {
+      "name": "Security Scanning & Analysis Server",
+      "description": "Tools for security scanning, vulnerability assessment, and compliance checking",
+      "server_config": {
+        "command": "npx",
+        "args": ["@security-mcp/server"],
+        "env": {
+          "SECURITY_SCAN_LEVEL": "${SECURITY_SCAN_LEVEL}",
+          "TRIVY_CONFIG": "${TRIVY_CONFIG}"
+        }
+      },
+      "tools": [
+        "security_scan_code",
+        "security_scan_dependencies",
+        "security_scan_container",
+        "security_scan_infrastructure",
+        "security_generate_report",
+        "security_check_compliance",
+        "security_analyze_threats",
+        "security_audit_permissions",
+        "security_validate_secrets",
+        "security_check_policies"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": [],
+      "optional_env": ["SECURITY_SCAN_LEVEL", "TRIVY_CONFIG"]
+    },
+    "api-gen": {
+      "name": "API Generation & Documentation Server",
+      "description": "Tools for API generation, documentation, and client SDK creation",
+      "server_config": {
+        "command": "npx",
+        "args": ["@api-gen-mcp/server"],
+        "env": {
+          "API_SPEC_FORMAT": "${API_SPEC_FORMAT}",
+          "API_BASE_URL": "${API_BASE_URL}"
+        }
+      },
+      "tools": [
+        "generate_openapi_spec",
+        "generate_client_sdk",
+        "generate_api_docs",
+        "validate_api_spec",
+        "generate_mock_server",
+        "generate_api_tests",
+        "generate_postman_collection",
+        "analyze_api_changes",
+        "generate_crud_endpoints",
+        "validate_api_security"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": [],
+      "optional_env": ["API_SPEC_FORMAT", "API_BASE_URL"]
+    },
+    "git": {
+      "name": "Git Operations Server",
+      "description": "Tools for Git operations, branch management, and repository analysis",
+      "server_config": {
+        "command": "npx",
+        "args": ["@git-mcp/server"],
+        "env": {
+          "GIT_TOKEN": "${GIT_TOKEN}",
+          "GIT_BASE_URL": "${GIT_BASE_URL}"
+        }
+      },
+      "tools": [
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_branch",
+        "git_merge",
+        "git_rebase",
+        "git_cherry_pick",
+        "git_tag",
+        "git_analyze_commits",
+        "git_create_pr"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": [],
+      "optional_env": ["GIT_TOKEN", "GIT_BASE_URL"]
+    },
+    "docker": {
+      "name": "Docker & Container Operations Server",
+      "description": "Tools for Docker operations, image management, and container orchestration",
+      "server_config": {
+        "command": "npx",
+        "args": ["@docker-mcp/server"],
+        "env": {
+          "DOCKER_REGISTRY": "${DOCKER_REGISTRY}",
+          "DOCKER_REGISTRY_TOKEN": "${DOCKER_REGISTRY_TOKEN}"
+        }
+      },
+      "tools": [
+        "docker_build",
+        "docker_push",
+        "docker_pull",
+        "docker_run",
+        "docker_exec",
+        "docker_logs",
+        "docker_inspect",
+        "docker_compose_up",
+        "docker_compose_down",
+        "docker_image_scan"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": [],
+      "optional_env": ["DOCKER_REGISTRY", "DOCKER_REGISTRY_TOKEN"]
+    },
+    "ai-code": {
+      "name": "AI Code Generation & Analysis Server",
+      "description": "Tools for AI-powered code generation, analysis, and optimization",
+      "server_config": {
+        "command": "npx",
+        "args": ["@ai-code-mcp/server"],
+        "env": {
+          "AI_MODEL": "${AI_MODEL}",
+          "AI_API_KEY": "${AI_API_KEY}"
+        }
+      },
+      "tools": [
+        "generate_code",
+        "analyze_code",
+        "optimize_code",
+        "generate_documentation",
+        "generate_tests",
+        "refactor_code",
+        "explain_code",
+        "find_bugs",
+        "suggest_improvements",
+        "generate_comments"
+      ],
+      "dependencies": [],
+      "conflicts": [],
+      "required_env": [],
+      "optional_env": ["AI_MODEL", "AI_API_KEY"]
+    }
+  },
+  "presets": {
+    "devops": {
+      "name": "DevOps Operations",
+      "description": "Complete DevOps toolchain for deployment and monitoring",
+      "servers": ["flux", "monitoring", "kubernetes", "security", "docker"],
+      "use_cases": ["deployment", "monitoring", "troubleshooting", "security-audit"]
+    },
+    "development": {
+      "name": "Development Workflow",
+      "description": "Full development lifecycle tools",
+      "servers": ["git", "testing", "security", "api-gen", "ai-code"],
+      "use_cases": ["coding", "testing", "api-development", "code-review"]
+    },
+    "data": {
+      "name": "Data Operations",
+      "description": "Database and data management tools",
+      "servers": ["database", "testing", "security", "monitoring"],
+      "use_cases": ["database-migration", "data-analysis", "performance-tuning"]
+    },
+    "security": {
+      "name": "Security Operations",
+      "description": "Comprehensive security toolchain",
+      "servers": ["security", "kubernetes", "docker", "monitoring"],
+      "use_cases": ["security-scan", "vulnerability-assessment", "compliance-check"]
+    },
+    "gitops": {
+      "name": "GitOps Complete",
+      "description": "Complete GitOps workflow with monitoring",
+      "servers": ["flux", "kubernetes", "git", "monitoring", "security"],
+      "use_cases": ["gitops-deployment", "flux-troubleshooting", "cluster-management"]
+    }
+  },
+  "comment_patterns": {
+    "mcp_servers": {
+      "pattern": "@claude use mcp:([\\w,]+)",
+      "description": "Specify MCP servers to use",
+      "examples": [
+        "@claude use mcp:flux,monitoring fix deployment issue",
+        "@claude use mcp:testing,security run comprehensive tests",
+        "@claude use mcp:database,api-gen create user CRUD endpoints"
+      ]
+    },
+    "preset": {
+      "pattern": "@claude use preset:([\\w-]+)",
+      "description": "Use predefined server presets",
+      "examples": [
+        "@claude use preset:devops troubleshoot staging deployment",
+        "@claude use preset:development implement new feature",
+        "@claude use preset:security audit application security"
+      ]
+    },
+    "env_vars": {
+      "pattern": "@claude env:([\\w=,]+)",
+      "description": "Specify environment variables",
+      "examples": [
+        "@claude env:TEST_ENV=staging use mcp:testing run tests",
+        "@claude env:SECURITY_SCAN_LEVEL=high use mcp:security scan code"
+      ]
+    }
+  },
+  "config_templates": {
+    "minimal": {
+      "description": "Minimal configuration for basic tasks",
+      "max_servers": 2,
+      "timeout": 300,
+      "resource_limits": {
+        "memory": "512Mi",
+        "cpu": "500m"
+      }
+    },
+    "standard": {
+      "description": "Standard configuration for most workflows",
+      "max_servers": 5,
+      "timeout": 600,
+      "resource_limits": {
+        "memory": "1Gi",
+        "cpu": "1000m"
+      }
+    },
+    "comprehensive": {
+      "description": "Full configuration for complex operations",
+      "max_servers": 10,
+      "timeout": 1200,
+      "resource_limits": {
+        "memory": "2Gi",
+        "cpu": "2000m"
+      }
+    }
+  },
+  "security_policies": {
+    "default": {
+      "allowed_tools": ["read", "write", "bash", "git"],
+      "restricted_tools": ["system_admin", "network_admin"],
+      "require_approval": ["delete", "deploy", "modify_infrastructure"]
+    },
+    "restricted": {
+      "allowed_tools": ["read", "write"],
+      "restricted_tools": ["bash", "git", "system_admin", "network_admin"],
+      "require_approval": ["all"]
+    },
+    "elevated": {
+      "allowed_tools": ["all"],
+      "restricted_tools": [],
+      "require_approval": ["system_admin", "network_admin"]
+    }
+  }
+}
