@@ -71,15 +71,6 @@
         "node",
         "/Users/devin/.nvm/versions/node/v22.17.0/lib/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js"
       ]
-    },
-    "hf-mcp-server": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://huggingface.co/mcp",
-        "--header",
-        "Authorization: Bearer <YOUR_HF_TOKEN>"
-      ]
     }
   }
 }

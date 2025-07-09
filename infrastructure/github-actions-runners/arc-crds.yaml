@@ -1,0 +1,302 @@
+# Actions Runner Controller Custom Resource Definitions (CRDs)
+# 
+# These CRDs define the custom resources that ARC uses to manage GitHub Actions runners.
+# Must be applied before installing the controller.
+#
+# Apply with: kubectl apply -f arc-crds.yaml
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: runners.actions.summerwind.dev
+spec:
+  group: actions.summerwind.dev
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              repository:
+                type: string
+              organization:
+                type: string
+              enterprise:
+                type: string
+              labels:
+                type: array
+                items:
+                  type: string
+              group:
+                type: string
+              ephemeral:
+                type: boolean
+              dockerdWithinRunnerContainer:
+                type: boolean
+              image:
+                type: string
+              imagePullPolicy:
+                type: string
+              workDir:
+                type: string
+              env:
+                type: array
+                items:
+                  type: object
+              resources:
+                type: object
+              nodeSelector:
+                type: object
+              tolerations:
+                type: array
+              affinity:
+                type: object
+              securityContext:
+                type: object
+              containerSecurityContext:
+                type: object
+              volumeMounts:
+                type: array
+              volumes:
+                type: array
+          status:
+            type: object
+    subresources:
+      status: {}
+  scope: Namespaced
+  names:
+    plural: runners
+    singular: runner
+    kind: Runner
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: runnerdeployments.actions.summerwind.dev
+spec:
+  group: actions.summerwind.dev
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              replicas:
+                type: integer
+                minimum: 0
+              selector:
+                type: object
+              template:
+                type: object
+                properties:
+                  spec:
+                    type: object
+                    properties:
+                      repository:
+                        type: string
+                      organization:
+                        type: string
+                      enterprise:
+                        type: string
+                      labels:
+                        type: array
+                        items:
+                          type: string
+                      group:
+                        type: string
+                      ephemeral:
+                        type: boolean
+                      dockerdWithinRunnerContainer:
+                        type: boolean
+                      image:
+                        type: string
+                      imagePullPolicy:
+                        type: string
+                      workDir:
+                        type: string
+                      env:
+                        type: array
+                        items:
+                          type: object
+                      resources:
+                        type: object
+                      nodeSelector:
+                        type: object
+                      tolerations:
+                        type: array
+                      affinity:
+                        type: object
+                      securityContext:
+                        type: object
+                      containerSecurityContext:
+                        type: object
+                      volumeMounts:
+                        type: array
+                      volumes:
+                        type: array
+          status:
+            type: object
+    subresources:
+      status: {}
+      scale:
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+  scope: Namespaced
+  names:
+    plural: runnerdeployments
+    singular: runnerdeployment
+    kind: RunnerDeployment
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: runnerreplicasets.actions.summerwind.dev
+spec:
+  group: actions.summerwind.dev
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              replicas:
+                type: integer
+                minimum: 0
+              selector:
+                type: object
+              template:
+                type: object
+                properties:
+                  spec:
+                    type: object
+                    properties:
+                      repository:
+                        type: string
+                      organization:
+                        type: string
+                      enterprise:
+                        type: string
+                      labels:
+                        type: array
+                        items:
+                          type: string
+                      group:
+                        type: string
+                      ephemeral:
+                        type: boolean
+                      dockerdWithinRunnerContainer:
+                        type: boolean
+                      image:
+                        type: string
+                      imagePullPolicy:
+                        type: string
+                      workDir:
+                        type: string
+                      env:
+                        type: array
+                        items:
+                          type: object
+                      resources:
+                        type: object
+                      nodeSelector:
+                        type: object
+                      tolerations:
+                        type: array
+                      affinity:
+                        type: object
+                      securityContext:
+                        type: object
+                      containerSecurityContext:
+                        type: object
+                      volumeMounts:
+                        type: array
+                      volumes:
+                        type: array
+          status:
+            type: object
+    subresources:
+      status: {}
+      scale:
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+  scope: Namespaced
+  names:
+    plural: runnerreplicasets
+    singular: runnerreplicaset
+    kind: RunnerReplicaSet
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: horizontalrunnerautoscalers.actions.summerwind.dev
+spec:
+  group: actions.summerwind.dev
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              scaleTargetRef:
+                type: object
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+              minReplicas:
+                type: integer
+                minimum: 1
+              maxReplicas:
+                type: integer
+                minimum: 1
+              metrics:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    scaleUpThreshold:
+                      type: string
+                    scaleDownThreshold:
+                      type: string
+                    scaleUpFactor:
+                      type: string
+                    scaleDownFactor:
+                      type: string
+              scaleDownDelaySecondsAfterScaleOut:
+                type: integer
+              scaleUpTriggers:
+                type: array
+                items:
+                  type: object
+          status:
+            type: object
+    subresources:
+      status: {}
+  scope: Namespaced
+  names:
+    plural: horizontalrunnerautoscalers
+    singular: horizontalrunnerautoscaler
+    kind: HorizontalRunnerAutoscaler

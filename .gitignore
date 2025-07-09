@@ -1,3 +1,21 @@
+# Terraform/Terragrunt
+.terraform/
+.terragrunt-cache/
+*.tfplan
+*.tfstate
+*.tfstate.*
+
+# Claude research repos (git submodules)
+claude-research/
+
+# Large binary files
+terraform-provider-*
+
+# Kubernetes/Minikube binaries
+minikube-*
+kubectl-*
+*.iso
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

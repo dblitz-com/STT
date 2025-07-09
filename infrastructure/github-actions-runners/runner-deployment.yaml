@@ -1,0 +1,167 @@
+# GitHub Actions Runner Deployment Configuration
+#
+# This creates self-hosted GitHub Actions runners that can execute workflows
+# for the repository. The runners are automatically managed by ARC.
+#
+# Apply with: kubectl apply -f runner-deployment.yaml
+
+apiVersion: actions.summerwind.dev/v1alpha1
+kind: RunnerDeployment
+metadata:
+  name: claude-code-runners
+  namespace: actions-runner-system
+  labels:
+    app: claude-code-runners
+spec:
+  # Start with 1 runner, will be auto-scaled by HorizontalRunnerAutoscaler
+  replicas: 1
+  template:
+    spec:
+      # Configure for specific repository - UPDATE WITH ACTUAL REPO
+      repository: dblitz-com/gengine
+      
+      # Runner configuration
+      labels:
+        - "self-hosted"
+        - "linux"
+        - "x64"
+        - "claude-code"
+        - "kubernetes"
+      
+      # Use ephemeral runners (recommended for security)
+      ephemeral: true
+      
+      # Enable Docker-in-Docker for actions that need Docker
+      dockerdWithinRunnerContainer: true
+      
+      # Custom runner image with required tools
+      image: "summerwind/actions-runner:latest"
+      imagePullPolicy: Always
+      
+      # Working directory for actions
+      workDir: "/runner/_work"
+      
+      # Environment variables
+      env:
+      - name: RUNNER_FEATURE_FLAG_ONCE
+        value: "true"
+      - name: DOCKER_HOST
+        value: "unix:///var/run/docker.sock"
+      
+      # Resource requirements - Claude Code needs substantial resources
+      resources:
+        requests:
+          memory: "4Gi"
+          cpu: "2"
+          # Request ephemeral storage for workspace
+          ephemeral-storage: "10Gi"
+        limits:
+          memory: "8Gi"
+          cpu: "4"
+          ephemeral-storage: "20Gi"
+      
+      # Node selection - prefer nodes with more resources
+      nodeSelector:
+        kubernetes.io/arch: "amd64"
+      
+      # Tolerations for dedicated nodes (if any)
+      tolerations:
+      - key: "github-actions"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      
+      # Security context
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 121
+        fsGroup: 121
+        # Allow Docker socket access
+        supplementalGroups: [999]
+      
+      # Container security context
+      containerSecurityContext:
+        allowPrivilegeEscalation: true
+        capabilities:
+          add: ["SYS_PTRACE"]
+        # Required for Docker-in-Docker
+        privileged: false
+        readOnlyRootFilesystem: false
+        runAsNonRoot: true
+        runAsUser: 1001
+      
+      # Volume mounts for Docker and workspace
+      volumeMounts:
+      - name: docker-sock
+        mountPath: /var/run/docker.sock
+      - name: runner-work
+        mountPath: /runner/_work
+      
+      # Volumes
+      volumes:
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
+      - name: runner-work
+        emptyDir:
+          sizeLimit: "20Gi"
+---
+# Horizontal Runner Autoscaler for dynamic scaling
+apiVersion: actions.summerwind.dev/v1alpha1
+kind: HorizontalRunnerAutoscaler
+metadata:
+  name: claude-code-runners-autoscaler
+  namespace: actions-runner-system
+  labels:
+    app: claude-code-runners
+spec:
+  # Target the RunnerDeployment we created above
+  scaleTargetRef:
+    kind: RunnerDeployment
+    name: claude-code-runners
+  
+  # Scaling configuration
+  minReplicas: 1  # Always keep at least 1 runner ready
+  maxReplicas: 10  # Scale up to 10 runners during high load
+  
+  # Scaling metrics and thresholds
+  metrics:
+  - type: PercentageRunnersBusy
+    # Scale up when 75% of runners are busy
+    scaleUpThreshold: '0.75'
+    # Scale down when only 25% of runners are busy  
+    scaleDownThreshold: '0.25'
+    
+  - type: TotalNumberOfQueuedAndInProgressWorkflowRuns
+    # Scale up when there are 2+ queued/running workflows
+    scaleUpThreshold: '2'
+    # Scale down when there are 0 queued workflows
+    scaleDownThreshold: '0'
+  
+  # Scaling behavior
+  scaleDownDelaySecondsAfterScaleOut: 300  # Wait 5 minutes before scaling down after scaling up
+  
+  # Optional: GitHub webhook-based scaling triggers
+  scaleUpTriggers:
+  - githubEvent:
+      workflowJob: {}
+    amount: 1
+    duration: "5m"
+---
+# Service Monitor for Prometheus metrics (optional)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: claude-code-runners-metrics
+  namespace: actions-runner-system
+  labels:
+    app: claude-code-runners
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actions-runner-controller
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics

@@ -1,0 +1,112 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup-failed-eventlistener-pods
+  namespace: tekton-pipelines
+  labels:
+    app: tekton-pod-cleanup
+    component: maintenance
+spec:
+  # Run every hour to clean up failed pods
+  schedule: "0 * * * *"
+  # Keep only the last 3 completed jobs
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: tekton-pod-cleanup
+        spec:
+          serviceAccountName: tekton-pod-cleanup-sa
+          containers:
+          - name: kubectl-cleanup
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting EventListener pod cleanup..."
+              
+              # Clean up failed EventListener pods older than 1 hour
+              kubectl delete pod -n tekton-pipelines \
+                -l eventlistener \
+                --field-selector=status.phase=Failed \
+                --grace-period=0 \
+                --force || true
+              
+              # Clean up CrashLoopBackOff pods older than 1 hour
+              # Get pods in CrashLoopBackOff or Error state
+              kubectl get pods -n tekton-pipelines \
+                -l eventlistener \
+                -o json | \
+              jq -r '.items[] | select(
+                (.status.containerStatuses[]?.state.waiting?.reason // "") == "CrashLoopBackOff" or
+                (.status.phase // "") == "Failed" or
+                (.status.containerStatuses[]?.restartCount // 0) > 5
+              ) | select(
+                (.status.startTime | fromdateiso8601) < (now - 3600)
+              ) | .metadata.name' | \
+              while read pod; do
+                if [ ! -z "$pod" ]; then
+                  echo "Deleting failed pod: $pod"
+                  kubectl delete pod "$pod" -n tekton-pipelines --grace-period=0 --force || true
+                fi
+              done
+              
+              # Clean up completed pipeline runs older than 24 hours
+              kubectl delete pipelinerun -n tekton-pipelines \
+                --field-selector=status.conditions[0].reason=Succeeded \
+                --dry-run=client -o name | \
+              head -20 | \
+              xargs -I {} kubectl delete {} -n tekton-pipelines --grace-period=0 || true
+              
+              echo "Cleanup completed"
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-pod-cleanup-sa
+  namespace: tekton-pipelines
+  labels:
+    app: tekton-pod-cleanup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: tekton-pipelines
+  name: tekton-pod-cleanup-role
+  labels:
+    app: tekton-pod-cleanup
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns", "taskruns"]
+  verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-pod-cleanup-binding
+  namespace: tekton-pipelines
+  labels:
+    app: tekton-pod-cleanup
+subjects:
+- kind: ServiceAccount
+  name: tekton-pod-cleanup-sa
+  namespace: tekton-pipelines
+roleRef:
+  kind: Role
+  name: tekton-pod-cleanup-role
+  apiGroup: rbac.authorization.k8s.io

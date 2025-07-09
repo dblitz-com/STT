@@ -1,0 +1,119 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: webhook-server-build-
+  namespace: tekton-pipelines
+spec:
+  serviceAccountName: tekton-build-sa
+  pipelineRef:
+    name: webhook-server-build
+  params:
+  - name: repo-url
+    value: "https://github.com/dblitz-com/gengine.git"
+  - name: revision
+    value: "feature/clean-mcp-restructure"
+  - name: image-name
+    value: "549574275832.dkr.ecr.us-east-1.amazonaws.com/webhook-server"
+  workspaces:
+  - name: shared-data
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+  - name: docker-credentials
+    secret:
+      secretName: ecr-credentials
+---
+# Install Tekton Triggers first:
+# kubectl apply --filename https://storage.googleapis.com/tekton-releases/triggers/latest/release.yaml
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: webhook-server-trigger-template
+  namespace: tekton-pipelines
+spec:
+  params:
+  - name: git-repo-url
+    description: The git repository url
+  - name: git-revision
+    description: The git revision
+    default: main
+  - name: git-repo-name
+    description: The name of the deployment to be created / patched
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      generateName: webhook-server-build-$(tt.params.git-repo-name)-
+      namespace: tekton-pipelines
+    spec:
+      serviceAccountName: tekton-build-sa
+      podTemplate:
+        securityContext:
+          fsGroup: 65532
+      pipelineRef:
+        name: webhook-server-build
+      params:
+      - name: repo-url
+        value: $(tt.params.git-repo-url)
+      - name: revision
+        value: $(tt.params.git-revision)
+      - name: image-name
+        value: "549574275832.dkr.ecr.us-east-1.amazonaws.com/webhook-server"
+      workspaces:
+      - name: shared-data
+        volumeClaimTemplate:
+          spec:
+            accessModes:
+            - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+      - name: docker-credentials
+        secret:
+          secretName: ecr-credentials
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: webhook-server-pipelinerun-binding
+  namespace: tekton-pipelines
+spec:
+  params:
+  - name: git-repo-url
+    value: $(body.repository.clone_url)
+  - name: git-revision
+    value: $(body.head_commit.id)
+  - name: git-repo-name
+    value: $(body.repository.name)
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: webhook-server-listener
+  namespace: tekton-pipelines
+spec:
+  serviceAccountName: tekton-build-sa
+  triggers:
+  - bindings:
+    - ref: webhook-server-pipelinerun-binding
+    template:
+      ref: webhook-server-trigger-template
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: el-webhook-server-listener
+  namespace: tekton-pipelines
+spec:
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    eventlistener: webhook-server-listener
+  type: LoadBalancer

@@ -1,0 +1,12 @@
+---
+# Staging-specific patches for webhook-server
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: webhook-server
+spec:
+  # Use faster analysis for staging
+  analysis:
+    interval: 30s
+    threshold: 2
+    iterations: 3

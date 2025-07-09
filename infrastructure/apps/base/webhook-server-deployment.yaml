@@ -1,0 +1,129 @@
+# ⚠️  OPTION B - CUSTOM KUBERNETES IMPLEMENTATION ⚠️
+# 
+# DO NOT USE THIS UNLESS FIXING GITHUB ACTIONS RUNNER ISSUES!
+# 
+# PREFERRED SOLUTION: Use GitHub Actions self-hosted runners (Option A)
+# See refs/claude-code-action and refs/claude-code-base-action for official implementation
+# 
+# This webhook server creates Kubernetes Jobs instead of triggering GitHub Actions.
+# This approach lacks proper GitHub Actions context and status comment formatting.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-server
+  labels:
+    app: webhook-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook-server
+  template:
+    metadata:
+      labels:
+        app: webhook-server
+    spec:
+      serviceAccountName: webhook-server
+      containers:
+      - name: webhook-server
+        image: 549574275832.dkr.ecr.us-east-1.amazonaws.com/webhook-server:4e13b2918bc62e63ac72ddedfb5667592b59b7f9-20250708000428 # {"$imagepolicy": "flux-system:webhook-server"}
+        ports:
+        - containerPort: 9000
+        env:
+        - name: PORT
+          value: "9000"
+        - name: NODE_ENV
+          value: "production"
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: claude-secrets
+              key: anthropic-api-key
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-token-secret
+              key: token
+        - name: WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: example-app-secrets
+              key: webhook-secret
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-server
+  labels:
+    app: webhook-server
+spec:
+  selector:
+    app: webhook-server
+  ports:
+  - name: http
+    port: 80
+    targetPort: 9000
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: webhook-server
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: webhook-server
+rules:
+# Allow creating and managing ConfigMaps for Claude job configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+# Allow creating and managing Jobs
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+# Allow getting secrets (read-only for claude-secrets)
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+# Allow getting pods and logs for monitoring
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: webhook-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: webhook-server
+subjects:
+- kind: ServiceAccount
+  name: webhook-server

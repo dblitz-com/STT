@@ -1,0 +1,84 @@
+---
+# Flagger Helm Repository
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: flagger
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://flagger.app
+---
+# Flagger Helm Release
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: flagger
+  namespace: flux-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: flagger
+      version: "1.37.0"
+      sourceRef:
+        kind: HelmRepository
+        name: flagger
+        namespace: flux-system
+  values:
+    metricsServer: http://prometheus:9090
+    slack:
+      url: ""  # Add Slack webhook URL for notifications
+      channel: "#deployments"
+    teams:
+      url: ""  # Add Microsoft Teams webhook URL
+    crd:
+      create: true
+    rbac:
+      create: true
+    psp:
+      create: false
+---
+# Prometheus for metrics (required by Flagger)
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://prometheus-community.github.io/helm-charts
+---
+# Prometheus Helm Release
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus
+  namespace: system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "55.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  values:
+    grafana:
+      enabled: true
+      adminPassword: "admin123"  # Change this in production
+    prometheus:
+      enabled: true
+      prometheusSpec:
+        retention: 7d
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
+    alertmanager:
+      enabled: true

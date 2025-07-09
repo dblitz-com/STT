@@ -1,0 +1,102 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: kaniko-build
+  namespace: tekton-pipelines
+spec:
+  description: Build and push container image with Kaniko
+  params:
+  - name: image
+    description: Name (reference) of the image to build
+  - name: dockerfile
+    description: Path to the Dockerfile to build
+    default: ./Dockerfile
+  - name: context
+    description: The build context used by Kaniko
+    default: ./
+  - name: extra-args
+    description: Extra args for Kaniko
+    type: array
+    default: []
+  workspaces:
+  - name: source
+  - name: dockerconfig
+    description: Docker config for registry authentication
+    optional: true
+  results:
+  - name: IMAGE-DIGEST
+    description: Digest of the image just built
+  - name: IMAGE-URL
+    description: URL of the image just built
+  steps:
+  - name: build-and-push
+    workingDir: $(workspaces.source.path)
+    image: gcr.io/kaniko-project/executor:v1.15.0-debug
+    args:
+    - $(params.extra-args)
+    - --dockerfile=$(params.dockerfile)
+    - --context=$(workspaces.source.path)/$(params.context)
+    - --destination=$(params.image)
+    - --digest-file=$(results.IMAGE-DIGEST.path)
+    - --image-name-with-digest-file=$(results.IMAGE-URL.path)
+    - --cache=true
+    env:
+    - name: DOCKER_CONFIG
+      value: $(workspaces.dockerconfig.path)
+    securityContext:
+      runAsUser: 0
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-clone
+  namespace: tekton-pipelines
+spec:
+  description: Clone git repository
+  params:
+  - name: url
+    description: Repository URL to clone from
+  - name: revision
+    description: Revision to checkout (branch, tag, sha, ref, etc...)
+    default: "main"
+  - name: depth
+    description: Perform a shallow clone where only the most recent commit(s) will be fetched
+    default: "1"
+  workspaces:
+  - name: output
+    description: The git repo will be cloned onto the volume backing this workspace
+  steps:
+  - name: clone
+    image: gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init:v0.40.2
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 65532
+      capabilities:
+        drop:
+        - ALL
+      seccompProfile:
+        type: RuntimeDefault
+    script: |
+      #!/usr/bin/env sh
+      set -eu
+      
+      CHECKOUT_DIR="$(workspaces.output.path)"
+      
+      /ko-app/git-init \
+        -url="$(params.url)" \
+        -revision="$(params.revision)" \
+        -path="$CHECKOUT_DIR" \
+        -depth="$(params.depth)"
+      
+      cd "$CHECKOUT_DIR"
+      RESULT_SHA="$(git rev-parse HEAD | tr -d '\n')"
+      EXIT_CODE="$?"
+      if [ "$EXIT_CODE" != 0 ]; then
+        exit $EXIT_CODE
+      fi
+      echo -n "$RESULT_SHA" > /tekton/results/commit
+  results:
+  - name: commit
+    description: The precise commit SHA that was fetched by this Task

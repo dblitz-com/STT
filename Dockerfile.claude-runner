@@ -1,0 +1,34 @@
+FROM oven/bun:1-alpine
+
+# Install required tools
+RUN apk add --no-cache \
+    git \
+    bash \
+    jq \
+    nodejs \
+    npm
+
+# Install Claude Code CLI globally
+RUN npm install -g @anthropic-ai/claude-code@1.0.43
+
+# Create app directory
+WORKDIR /app
+
+# Copy source code
+COPY package.json bun.lockb* ./
+RUN bun install --frozen-lockfile
+
+# Copy application code
+COPY src/ ./src/
+
+# Create a non-root user (use a different UID if 1000 is taken)
+RUN adduser -D -u 1001 claude || adduser -D claude
+
+# Switch to non-root user
+USER claude
+
+# Set working directory for runtime
+WORKDIR /workspace
+
+# The entrypoint will be overridden by Kubernetes Job
+CMD ["bun", "/app/src/coding/entrypoints/claude-runner.ts"]

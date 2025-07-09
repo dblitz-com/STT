@@ -1,0 +1,76 @@
+# Kustomization for GitHub Actions Runner Controller
+#
+# This manages all the resources needed for GitHub Actions self-hosted runners
+# in Kubernetes using actions-runner-controller (ARC).
+#
+# Apply with: kubectl apply -k .
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: github-actions-runners
+  namespace: actions-runner-system
+
+# Resources to deploy in order
+resources:
+  # 1. Install cert-manager (prerequisite)
+  - cert-manager.yaml
+  
+  # 2. Install CRDs first
+  - arc-crds.yaml
+  
+  # 3. Install ARC controller
+  - actions-runner-controller.yaml
+  
+  # 4. Deploy runners and autoscaler
+  - runner-deployment.yaml
+
+# Common labels for all resources
+commonLabels:
+  app.kubernetes.io/part-of: github-actions-infrastructure
+  app.kubernetes.io/managed-by: kustomize
+
+# Namespace to deploy everything
+namespace: actions-runner-system
+
+# Configuration generators
+configMapGenerator:
+- name: arc-config
+  literals:
+  - repository=dBlitz37/dblitz-engine
+  - webhook-scaling=enabled
+  - metrics-addr=0.0.0.0:8080
+  - health-probe-bind-address=0.0.0.0:8081
+
+# Secret generators (GitHub token will need to be provided)
+secretGenerator:
+- name: github-auth
+  literals:
+  - github_token=REPLACE_WITH_ACTUAL_TOKEN
+  
+# Images to use
+images:
+- name: summerwind/actions-runner-controller
+  newTag: v0.27.5
+- name: summerwind/actions-runner
+  newTag: latest
+
+# Patches for environment-specific configuration
+patchesStrategicMerge:
+- |-
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: controller-manager
+    namespace: actions-runner-system
+  spec:
+    template:
+      spec:
+        containers:
+        - name: manager
+          env:
+          - name: LOG_LEVEL
+            value: info
+          - name: METRICS_ADDR
+            value: 0.0.0.0:8080

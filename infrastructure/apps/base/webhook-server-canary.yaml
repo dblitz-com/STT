@@ -1,0 +1,31 @@
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: webhook-server
+  namespace: default
+spec:
+  # Generic Kubernetes provider for blue/green deployments
+  provider: kubernetes
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: webhook-server
+  progressDeadlineSeconds: 60
+  service:
+    port: 80
+    targetPort: 9000
+    name: webhook-server
+  analysis:
+    # Simple configuration with built-in metrics only
+    interval: 30s
+    threshold: 2
+    iterations: 5
+    metrics:
+    - name: request-success-rate
+      thresholdRange:
+        min: 99
+      interval: 1m
+    - name: request-duration
+      thresholdRange:
+        max: 500
+      interval: 30s

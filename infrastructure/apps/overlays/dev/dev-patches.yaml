@@ -1,0 +1,20 @@
+---
+# Development-specific patches for webhook-server
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: webhook-server
+  namespace: dev
+spec:
+  analysis:
+    interval: 30s  # Faster rollouts in dev
+    threshold: 1   # Lower threshold for dev
+    maxWeight: 100 # Can go to 100% in dev
+    stepWeight: 50 # Larger steps in dev
+    metrics:
+    - name: request-success-rate
+      threshold: 80  # Much lower threshold for dev testing
+      interval: 30s
+    - name: request-duration
+      threshold: 2000  # Very lenient for dev
+      interval: 30s

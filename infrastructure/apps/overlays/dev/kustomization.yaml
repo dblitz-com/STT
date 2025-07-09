@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+# Reference to base configuration
+resources:
+  - ../../base
+
+# Environment-specific labels
+commonLabels:
+  environment: dev
+
+# Environment-specific patches
+patchesStrategicMerge:
+  - dev-patches.yaml
+
+# Environment-specific images (if needed)
+images:
+  - name: gengine-webhook-server
+    newTag: dev-latest

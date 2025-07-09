@@ -1,0 +1,87 @@
+# cert-manager installation for GitHub Actions Runner Controller
+# Required for webhook TLS certificates in ARC
+#
+# This installs cert-manager which is a prerequisite for actions-runner-controller
+# 
+# Apply with: kubectl apply -f cert-manager.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+---
+# cert-manager CRDs and core components
+# Using the official cert-manager release
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-manager-install
+  namespace: cert-manager
+data:
+  install.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Installing cert-manager..."
+    
+    # Install cert-manager CRDs and components
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml
+    
+    # Wait for cert-manager to be ready
+    echo "Waiting for cert-manager to be ready..."
+    kubectl wait --for=condition=Available --timeout=300s deployment/cert-manager -n cert-manager
+    kubectl wait --for=condition=Available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
+    kubectl wait --for=condition=Available --timeout=300s deployment/cert-manager-webhook -n cert-manager
+    
+    echo "cert-manager installation completed successfully!"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cert-manager-installer
+  namespace: cert-manager
+spec:
+  template:
+    spec:
+      serviceAccountName: cert-manager-installer
+      restartPolicy: Never
+      containers:
+      - name: installer
+        image: bitnami/kubectl:latest
+        command: ["/bin/bash", "/scripts/install.sh"]
+        volumeMounts:
+        - name: install-script
+          mountPath: /scripts
+      volumes:
+      - name: install-script
+        configMap:
+          name: cert-manager-install
+          defaultMode: 0755
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cert-manager-installer
+  namespace: cert-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cert-manager-installer
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cert-manager-installer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cert-manager-installer
+subjects:
+- kind: ServiceAccount
+  name: cert-manager-installer
+  namespace: cert-manager

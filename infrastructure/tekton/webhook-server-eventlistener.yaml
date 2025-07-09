@@ -1,0 +1,14 @@
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: webhook-server-listener
+  namespace: tekton-pipelines
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: webhook-server-trigger
+      bindings:
+      - ref: webhook-server-pipelinerun-binding
+      template:
+        ref: webhook-server-trigger-template

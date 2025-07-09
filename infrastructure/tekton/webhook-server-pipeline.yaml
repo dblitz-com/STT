@@ -1,0 +1,95 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: webhook-server-build
+  namespace: tekton-pipelines
+spec:
+  description: Build and push webhook-server image
+  params:
+  - name: repo-url
+    type: string
+    description: The git repository URL to clone from
+    default: "https://github.com/dblitz-com/gengine.git"
+  - name: revision
+    type: string
+    description: The git revision to build
+    default: "feature/clean-mcp-restructure"
+  - name: image-name
+    type: string
+    description: Fully qualified image name
+    default: "549574275832.dkr.ecr.us-east-1.amazonaws.com/webhook-server"
+  - name: path-to-dockerfile
+    type: string
+    description: Path to Dockerfile relative to source root
+    default: "src/webhook-server/Dockerfile"
+  - name: path-to-context
+    type: string
+    description: Path to build context relative to source root
+    default: "."
+  workspaces:
+  - name: shared-data
+    description: Shared workspace for source and build
+  - name: docker-credentials
+    description: Docker registry credentials
+  tasks:
+  - name: fetch-source
+    taskRef:
+      name: git-clone
+    workspaces:
+    - name: output
+      workspace: shared-data
+    params:
+    - name: url
+      value: $(params.repo-url)
+    - name: revision
+      value: $(params.revision)
+  - name: generate-timestamp
+    taskRef:
+      name: generate-timestamp
+  - name: build-image
+    runAfter: ["fetch-source", "generate-timestamp"]
+    taskRef:
+      name: kaniko-build
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: dockerconfig
+      workspace: docker-credentials
+    params:
+    - name: image
+      value: "$(params.image-name):$(tasks.fetch-source.results.commit)-$(tasks.generate-timestamp.results.timestamp)"
+    - name: dockerfile
+      value: $(params.path-to-dockerfile)
+    - name: context
+      value: $(params.path-to-context)
+    - name: extra-args
+      value:
+      - --cache=true
+      - --cache-ttl=24h
+  results:
+  - name: IMAGE-DIGEST
+    description: Digest of the built image
+    value: $(tasks.build-image.results.IMAGE-DIGEST)
+  - name: IMAGE-URL
+    description: URL of the built image
+    value: $(tasks.build-image.results.IMAGE-URL)
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ecr-credentials
+  namespace: tekton-pipelines
+  annotations:
+    tekton.dev/docker-0: "549574275832.dkr.ecr.us-east-1.amazonaws.com"
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: ewogICJhdXRocyI6IHsKICAgICI1NDk1NzQyNzU4MzIuZGtyLmVjci51cy1lYXN0LTEuYW1hem9uYXdzLmNvbSI6IHsKICAgICAgImF1dGgiOiAiWVZkVE9rRkxTVUY0TnpWS1RqWk1OVEF3RWpKVk5EQTNRVGx4VmtreVMzUTJOMWR3Y1Z0alpDNWliREE2YlV0Rk1rSlBUbWxKV3pNMmMwa3JWbWczZUc1b2JqbEthV0p5WVZOE1JrVkZPRmhyWTI1WWMwRllhVGhJVVUxcllrZGxla2xoV2tOaFVrRk1WU0EzTXc9PSIKICAgIH0KICA0Cn0="
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-build-sa
+  namespace: tekton-pipelines
+secrets:
+- name: ecr-credentials

@@ -1,0 +1,48 @@
+# Example ConfigMap for Claude job
+# This should be created dynamically by the webhook/trigger system
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claude-config
+data:
+  job_id: "example-job-123"
+  comment_id: "example-comment-456"
+  github_repository: "owner/repo"
+  github_ref: "main"
+  allowed_tools: "Edit,MultiEdit,Glob,Grep,LS,Read,Write,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,mcp__github_file_ops__update_claude_comment,mcp__github_file_ops__get_pr_diff,mcp__github_file_ops__create_initial_comment"
+  disallowed_tools: ""
+  max_turns: "10"
+  timeout_minutes: "10"
+  system_prompt: ""
+  append_system_prompt: ""
+  fallback_model: ""
+  prompt: |
+    Please help me implement a new feature for user authentication.
+  mcp_config: |
+    {
+      "mcpServers": {
+        "github_file_ops": {
+          "command": "npx",
+          "args": ["-y", "@claude-code/mcp-server-github-file-ops"],
+          "env": {
+            "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+            "GITHUB_REPOSITORY": "${GITHUB_REPOSITORY}",
+            "GITHUB_REF": "${GITHUB_REF}",
+            "CLAUDE_JOB_ID": "${CLAUDE_JOB_ID}",
+            "CLAUDE_COMMENT_ID": "${CLAUDE_COMMENT_ID}",
+            "CLAUDE_CODE_ACTION": "1"
+          }
+        }
+      }
+    }
+---
+# Example Secret for Claude job
+# In production, this should be created via kubectl or sealed-secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: claude-secrets
+type: Opaque
+stringData:
+  anthropic-api-key: "sk-ant-api03-YOUR-API-KEY"
+  github-token: "ghp_YOUR_GITHUB_TOKEN"

@@ -1,0 +1,111 @@
+# Flagger Canary Configuration for GitHub Actions Webhook Handler
+# 
+# This enables canary deployments for the webhook handler that triggers
+# GitHub Actions workflows instead of Kubernetes Jobs.
+
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: webhook-github-actions
+  labels:
+    app: webhook-github-actions
+spec:
+  # Reference to the deployment
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: webhook-github-actions
+  
+  # Service configuration
+  service:
+    # Service port
+    port: 80
+    targetPort: 9000
+    
+    # Ingress configuration (optional)
+    gateways:
+    - webhook-github-actions-gateway
+    hosts:
+    - webhook.example.com  # Update with actual domain
+    
+    # Traffic policy
+    trafficPolicy:
+      tls:
+        mode: DISABLE  # Use LoadBalancer with external TLS termination
+  
+  # Canary analysis configuration
+  analysis:
+    # Schedule interval
+    interval: 1m
+    
+    # Number of checks before promotion
+    threshold: 5
+    
+    # Maximum traffic weight during canary
+    maxWeight: 50
+    
+    # Traffic step weight increase
+    stepWeight: 10
+    
+    # Success criteria - webhook should respond successfully
+    metrics:
+    - name: request-success-rate
+      thresholdRange:
+        min: 99
+      interval: 1m
+    - name: request-duration
+      thresholdRange:
+        max: 500
+      interval: 30s
+    
+    # Webhook validation tests
+    webhooks:
+    - name: acceptance-test
+      type: pre-rollout
+      url: http://flagger-loadtester.test/
+      timeout: 30s
+      metadata:
+        type: bash
+        cmd: |
+          # Health check test
+          curl -f http://webhook-github-actions-canary/health || exit 1
+          
+          # Test webhook endpoint responds (without triggering actual workflow)
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHub-Hookshot/test" \
+            -d '{"action":"test","repository":{"full_name":"test/test"}}' \
+            http://webhook-github-actions-canary/webhook/claude \
+            -w "%{http_code}" -o /dev/null -s | grep -q "200"
+    
+    - name: load-test
+      type: rollout
+      url: http://flagger-loadtester.test/
+      metadata:
+        cmd: |
+          hey -z 2m -q 10 -c 2 http://webhook-github-actions-canary/health
+---
+# Gateway for ingress (if using Istio)
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: webhook-github-actions-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - webhook.example.com  # Update with actual domain
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: webhook-tls-secret
+    hosts:
+    - webhook.example.com  # Update with actual domain

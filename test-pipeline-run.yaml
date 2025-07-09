@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: webhook-server-build-test
+  namespace: tekton-pipelines
+spec:
+  serviceAccountName: tekton-build-sa
+  pipelineRef:
+    name: webhook-server-build
+  params:
+  - name: repo-url
+    value: "https://github.com/dblitz-com/gengine.git"
+  - name: revision
+    value: "feature/clean-mcp-restructure"
+  - name: image-name
+    value: "549574275832.dkr.ecr.us-east-1.amazonaws.com/webhook-server"
+  workspaces:
+  - name: shared-data
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+  - name: docker-credentials
+    secret:
+      secretName: ecr-credentials

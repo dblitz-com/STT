@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: terraform-force-unlock
+  namespace: tf-system
+spec:
+  restartPolicy: Never
+  containers:
+  - name: terraform
+    image: hashicorp/terraform:1.5.7
+    command: ["/bin/sh"]
+    args:
+      - -c
+      - |
+        mkdir -p /tmp/terraform
+        cp /terraform-config/* /tmp/terraform/
+        cd /tmp/terraform
+        terraform init -lock=false
+        terraform force-unlock -force b5722ec5-7638-8762-b849-73350e747c0e
+    envFrom:
+    - secretRef:
+        name: aws-credentials
+    volumeMounts:
+    - name: terraform-config
+      mountPath: /terraform-config
+    - name: terraform-workspace
+      mountPath: /tmp/terraform
+  volumes:
+  - name: terraform-config
+    configMap:
+      name: terraform-config
+  - name: terraform-workspace
+    emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: terraform-config
+  namespace: tf-system
+data:
+  main.tf: |
+    terraform {
+      required_version = ">= 1.0"
+
+      backend "s3" {
+        bucket = "dblitz-terraform-state"
+        key    = "eks/terraform.tfstate"
+        region = "us-east-1"
+      }
+
+      required_providers {
+        aws = {
+          source  = "hashicorp/aws"
+          version = ">= 5.0"
+        }
+      }
+    }
+
+    provider "aws" {
+      region = "us-east-1"
+    }

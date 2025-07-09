@@ -1,0 +1,19 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: generate-timestamp
+  namespace: tekton-pipelines
+spec:
+  description: Generate a timestamp for image tagging
+  results:
+  - name: timestamp
+    description: Generated timestamp in YYYYMMDDHHMMSSnanosec format
+  steps:
+  - name: generate
+    image: alpine:3.18
+    script: |
+      #!/bin/sh
+      # Generate timestamp in format that's sortable and includes nanoseconds for uniqueness
+      TIMESTAMP=$(date -u +%Y%m%d%H%M%S%N)
+      echo -n "${TIMESTAMP}" > $(results.timestamp.path)

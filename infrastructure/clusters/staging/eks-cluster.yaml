@@ -1,0 +1,30 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: eks-cluster
+  namespace: tf-system
+spec:
+  interval: 10m
+  approvePlan: auto
+  path: ./infrastructure/terraform/eks
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  runnerPodTemplate:
+    spec:
+      envFrom:
+      - secretRef:
+          name: aws-credentials
+  writeOutputsToSecret:
+    name: eks-cluster-outputs
+    outputs:
+      - cluster_arn
+      - cluster_certificate_authority_data
+      - cluster_endpoint
+      - cluster_id
+      - cluster_oidc_issuer_url
+      - cluster_security_group_id
+      - configure_kubectl
+      - load_balancer_controller_role_arn

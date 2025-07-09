@@ -1,0 +1,33 @@
+{
+  "name": "agentic-coding-webhook-server",
+  "version": "1.0.0",
+  "description": "Webhook server for GitHub integration with Claude Code",
+  "main": "index.ts",
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun --watch index.ts",
+    "build": "bun build index.ts --outdir=dist --target=node",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "@types/express": "^4.17.21",
+    "@octokit/rest": "^20.0.0",
+    "@octokit/auth-app": "^6.0.0",
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "@anthropic-ai/sdk": "^0.17.0",
+    "dotenv": "^17.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "webhook",
+    "github",
+    "claude-code",
+    "agentic-coding"
+  ]
+}

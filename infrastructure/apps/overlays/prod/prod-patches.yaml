@@ -1,0 +1,31 @@
+---
+# Production-specific patches for webhook-server
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: webhook-server
+  namespace: prod
+spec:
+  analysis:
+    interval: 120s  # Slower, more conservative rollouts
+    threshold: 10   # Higher threshold for production safety
+    maxWeight: 20   # Conservative canary traffic
+    stepWeight: 5   # Small incremental steps
+    metrics:
+    - name: request-success-rate
+      threshold: 99.5  # Very high threshold for production
+      interval: 2m
+    - name: request-duration
+      threshold: 200   # Strict performance requirements
+      interval: 1m
+    - name: error-rate
+      threshold: 0.1   # Very low error tolerance
+      interval: 1m
+    webhooks:
+    - name: manual-approval
+      type: confirm-rollout
+      url: http://flagger-loadtester.test/
+      timeout: 300s
+      metadata:
+        type: bash
+        cmd: "echo 'Manual approval required for production rollout'"

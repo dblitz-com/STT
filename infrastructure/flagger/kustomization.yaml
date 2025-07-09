@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Official Flagger base for generic Kubernetes (no service mesh)
+resources:
+  - https://github.com/fluxcd/flagger/kustomize/kubernetes?ref=main
+
+# Ensure resources are deployed to flagger-system namespace
+namespace: flagger-system
+
+# Add labels to all resources
+commonLabels:
+  app.kubernetes.io/part-of: flagger
+  app.kubernetes.io/managed-by: kustomize

@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: prod
+
+# Reference to base configuration
+resources:
+  - ../../base
+
+# Environment-specific labels
+commonLabels:
+  environment: prod
+
+# Environment-specific patches
+patchesStrategicMerge:
+  - prod-patches.yaml
+
+# Environment-specific images (pinned versions for prod)
+images:
+  - name: gengine-webhook-server
+    newTag: v1.0.0
+
+# Production-specific replicas
+replicas:
+  - name: webhook-server
+    count: 3

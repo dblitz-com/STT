@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Common resources shared across all environments
+resources:
+  # 🌟 OPTION A - OFFICIAL CLAUDE CODE ACTION (DEFAULT/RECOMMENDED) 🌟
+  # 
+  # Uses GitHub's native issue/PR webhooks → self-hosted runners → official claude-code-action
+  # Simple 20-line workflow in .github/workflows/claude-code.yml
+  # NO CUSTOM INFRASTRUCTURE NEEDED!
+  
+  # 🔧 OPTION B - CUSTOM CLAUDE INFRASTRUCTURE (PRESERVED FOR FUTURE USE) 🔧
+  # Uncomment these for custom implementations, learning, or special use cases:
+  # - webhook-github-actions-deployment.yaml  # Custom webhook → GitHub Actions
+  # - webhook-github-actions-canary.yaml
+  # - webhook-server-deployment.yaml          # Custom webhook → Kubernetes Jobs  
+  # - webhook-server-canary.yaml
+  # - claude-job.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/managed-by: flux
+  app.kubernetes.io/part-of: gengine

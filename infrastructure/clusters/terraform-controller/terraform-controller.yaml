@@ -1,0 +1,42 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: tf-controller
+  namespace: tf-system
+spec:
+  interval: 10m
+  url: https://flux-iac.github.io/tofu-controller
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: tf-controller
+  namespace: tf-system
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: tf-controller
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: tf-controller
+      interval: 10m
+  values:
+    replicaCount: 1
+    concurrency: 5
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 400m
+        memory: 64Mi
+    runner:
+      serviceAccount:
+        create: true
+        name: tf-runner
+      image:
+        repository: ghcr.io/flux-iac/tf-runner
+        tag: v0.16.0-rc.4

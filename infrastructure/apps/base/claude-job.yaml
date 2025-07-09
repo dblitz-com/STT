@@ -1,0 +1,194 @@
+# ⚠️  OPTION B - CUSTOM KUBERNETES IMPLEMENTATION ⚠️
+# 
+# DO NOT USE THIS UNLESS FIXING GITHUB ACTIONS RUNNER ISSUES!
+# 
+# PREFERRED SOLUTION: Use GitHub Actions self-hosted runners (Option A)
+# See refs/claude-code-action and refs/claude-code-base-action for official implementation
+# 
+# This is a custom Kubernetes Job template that attempts to emulate GitHub Actions.
+# It lacks proper GitHub Actions context and status comment formatting.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: claude-job
+  labels:
+    app: claude-runner
+spec:
+  template:
+    metadata:
+      labels:
+        app: claude-runner
+    spec:
+      serviceAccountName: claude-runner
+      restartPolicy: Never
+      initContainers:
+      # Clone the repository
+      - name: git-clone
+        image: alpine/git:latest
+        command:
+        - sh
+        - -c
+        - |
+          # Configure git to use the GitHub token for authentication
+          git config --global credential.helper store
+          echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > ~/.git-credentials
+          
+          # Clone the repository
+          git clone https://github.com/${GITHUB_REPOSITORY}.git /workspace
+          cd /workspace
+          
+          # Checkout specific ref if provided
+          if [ -n "${GITHUB_REF}" ]; then
+            git checkout ${GITHUB_REF}
+          fi
+        env:
+        - name: GITHUB_REPOSITORY
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: github_repository
+        - name: GITHUB_REF
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: github_ref
+              optional: true
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: claude-secrets
+              key: github-token
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      containers:
+      - name: claude-runner
+        image: 549574275832.dkr.ecr.us-east-1.amazonaws.com/claude-runner:latest
+        command: ["bun", "/app/src/coding/entrypoints/claude-runner.ts"]
+        workingDir: /workspace
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: claude-secrets
+              key: anthropic-api-key
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: claude-secrets
+              key: github-token
+        - name: CLAUDE_JOB_ID
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: job_id
+        - name: CLAUDE_COMMENT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: comment_id
+        - name: INPUT_ALLOWED_TOOLS
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: allowed_tools
+              optional: true
+        - name: INPUT_DISALLOWED_TOOLS
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: disallowed_tools
+              optional: true
+        - name: INPUT_MAX_TURNS
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: max_turns
+              optional: true
+        - name: INPUT_SYSTEM_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: system_prompt
+              optional: true
+        - name: INPUT_APPEND_SYSTEM_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: append_system_prompt
+              optional: true
+        - name: INPUT_TIMEOUT_MINUTES
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: timeout_minutes
+              optional: true
+        - name: INPUT_FALLBACK_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: claude-config
+              key: fallback_model
+              optional: true
+        - name: RUNNER_TEMP
+          value: "/tmp"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: prompt
+          mountPath: /tmp/prompt.txt
+          subPath: prompt.txt
+        - name: mcp-config
+          mountPath: /tmp/mcp-config.json
+          subPath: mcp-config.json
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      - name: prompt
+        configMap:
+          name: claude-config
+          items:
+          - key: prompt
+            path: prompt.txt
+      - name: mcp-config
+        configMap:
+          name: claude-config
+          items:
+          - key: mcp_config
+            path: mcp-config.json
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: claude-runner
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claude-runner
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: claude-runner
+subjects:
+- kind: ServiceAccount
+  name: claude-runner

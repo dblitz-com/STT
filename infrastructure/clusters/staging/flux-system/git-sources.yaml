@@ -1,0 +1,40 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gengine-main
+  namespace: flux-system
+spec:
+  interval: 5m
+  ref:
+    branch: main
+  url: https://github.com/dblitz-com/gengine.git
+  secretRef:
+    name: flux-system
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gengine-feature
+  namespace: flux-system
+spec:
+  interval: 1m
+  ref:
+    branch: feature/clean-mcp-restructure
+  url: https://github.com/dblitz-com/gengine.git
+  secretRef:
+    name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gengine-apps-staging
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./infrastructure/apps/overlays/staging
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: gengine-feature
+  targetNamespace: staging

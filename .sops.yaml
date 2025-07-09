@@ -1,0 +1,18 @@
+creation_rules:
+  # Flux system secrets
+  - path_regex: infrastructure/clusters/.*/.*\.sops\.yaml$
+    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+  
+  # Application secrets by environment
+  - path_regex: infrastructure/apps/overlays/dev/.*\.sops\.yaml$
+    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+  
+  - path_regex: infrastructure/apps/overlays/staging/.*\.sops\.yaml$
+    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+  
+  - path_regex: infrastructure/apps/overlays/prod/.*\.sops\.yaml$
+    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+  
+  # Terraform secrets
+  - path_regex: infrastructure/terraform/.*\.sops\.yaml$
+    age: age1placeholder_replace_with_actual_public_key_from_age_keygen

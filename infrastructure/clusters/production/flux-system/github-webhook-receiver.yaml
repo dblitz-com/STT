@@ -1,0 +1,50 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-webhook-token
+  namespace: flux-system
+type: Opaque
+stringData:
+  token: "flux-webhook-secret-change-me"
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: github-webhook-provider
+  namespace: flux-system
+spec:
+  type: github
+  channel: "gengine"
+  secretRef:
+    name: github-webhook-token
+---
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: github-webhook-receiver
+  namespace: flux-system
+spec:
+  type: github
+  secretRef:
+    name: github-webhook-token
+  resources:
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: flux-system
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: github-webhook-alert
+  namespace: flux-system
+spec:
+  providerRef:
+    name: github-webhook-provider
+  eventSeverity: info
+  eventSources:
+    - kind: GitRepository
+      name: flux-system
+    - kind: Kustomization
+      name: flux-system
+  summary: "Flux GitOps notification for {{.InvolvedObject.name}}"
