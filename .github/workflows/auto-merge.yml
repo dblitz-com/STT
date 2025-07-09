@@ -6,6 +6,11 @@ on:
   check_suite:
     types: [completed]
   status: {}
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to check for auto-merge'
+        required: false
 
 permissions:
   contents: write
@@ -16,7 +21,7 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: github.event.review.state == 'approved' || github.event.check_suite.conclusion == 'success' || github.event.state == 'success'
+    if: github.event.review.state == 'approved' || github.event.check_suite.conclusion == 'success' || github.event.state == 'success' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +32,11 @@ jobs:
           # Get the PR number from the event
           if [ "${{ github.event_name }}" == "pull_request_review" ]; then
             PR_NUMBER="${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.pr_number }}" ]; then
+            PR_NUMBER="${{ github.event.inputs.pr_number }}"
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Find most recent open PR for this branch
+            PR_NUMBER=$(gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
           else
             # For check_suite and status events, we need to find the PR
             PR_NUMBER=$(gh pr list --search "sha:${{ github.sha }}" --json number --jq '.[0].number // empty')
