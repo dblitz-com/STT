@@ -2,16 +2,10 @@ name: Flux Manifest Validation
 
 on:
   pull_request:
-    paths:
-      - 'infrastructure/**'
-      - 'clusters/**'
   push:
     branches:
       - main
       - dev
-    paths:
-      - 'infrastructure/**'
-      - 'clusters/**'
 
 jobs:
   validate:
