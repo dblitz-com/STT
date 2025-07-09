@@ -33,20 +33,57 @@ jobs:
       - name: Check staging deployment status
         id: staging-check
         run: |
-          # In a real scenario, you'd check your staging environment health
-          # For now, we'll simulate a staging check
-          echo "Checking staging environment health..."
+          echo "🔍 Checking staging environment health..."
           
-          # Simulate staging health check (replace with actual health check)
+          # Check if staging GitRepositories are ready
           STAGING_HEALTHY=true
           
+          # Check recent workflow runs for staging environment
+          echo "Checking recent workflow runs for staging validation..."
+          
+          # Get the latest flux-validation workflow run for dev branch
+          LATEST_VALIDATION=$(gh run list --workflow="Flux Manifest Validation" --branch=dev --limit=1 --json conclusion --jq '.[0].conclusion')
+          
+          # Get the latest comprehensive-testing workflow run for dev branch
+          LATEST_TESTING=$(gh run list --workflow="Comprehensive Testing Pipeline" --branch=dev --limit=1 --json conclusion --jq '.[0].conclusion')
+          
+          echo "Latest validation status: $LATEST_VALIDATION"
+          echo "Latest testing status: $LATEST_TESTING"
+          
+          # Check if both validation and testing passed
+          if [ "$LATEST_VALIDATION" = "success" ] && [ "$LATEST_TESTING" = "success" ]; then
+            echo "✅ Staging validation and testing workflows passed"
+          else
+            echo "❌ Staging validation or testing workflows failed"
+            STAGING_HEALTHY=false
+          fi
+          
+          # Additional check: Look for any recent failed deployments
+          FAILED_RUNS=$(gh run list --workflow="Flux End-to-End Testing" --branch=dev --limit=3 --json conclusion --jq '[.[] | select(.conclusion == "failure")] | length')
+          
+          if [ "$FAILED_RUNS" -gt 2 ]; then
+            echo "⚠️  Multiple recent e2e test failures detected"
+            echo "Consider investigating staging environment issues"
+          fi
+          
+          # Check for any recent infrastructure changes that might affect stability
+          RECENT_INFRA_CHANGES=$(git log --oneline --since="1 day ago" --grep="infrastructure" --grep="flux" --grep="k8s" --grep="staging" -i | wc -l)
+          
+          if [ "$RECENT_INFRA_CHANGES" -gt 0 ]; then
+            echo "ℹ️  Recent infrastructure changes detected ($RECENT_INFRA_CHANGES commits)"
+            echo "Extra caution recommended for production promotion"
+          fi
+          
+          # Set output based on health check results
           if [ "$STAGING_HEALTHY" = "true" ]; then
             echo "staging_healthy=true" >> $GITHUB_OUTPUT
-            echo "✅ Staging environment is healthy"
+            echo "✅ Staging environment is healthy for production promotion"
           else
             echo "staging_healthy=false" >> $GITHUB_OUTPUT
-            echo "❌ Staging environment is unhealthy"
+            echo "❌ Staging environment is unhealthy - blocking production promotion"
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if promotion PR exists
         id: pr-check
@@ -63,7 +100,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get changes summary
+      - name: Get changes summary and detect change types
         id: changes
         run: |
           # Get commit messages since last main merge
@@ -83,6 +120,143 @@ jobs:
             echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
             
             echo "Found $COMMIT_COUNT new commits to promote"
+            
+            # Analyze change types based on file patterns
+            echo "🔍 Analyzing change types..."
+            
+            # Get changed files
+            CHANGED_FILES=$(git diff --name-only origin/main..origin/dev)
+            
+            # Initialize change type flags
+            HAS_INFRASTRUCTURE=false
+            HAS_WORKFLOWS=false
+            HAS_GENGINES=false
+            HAS_DOCS=false
+            HAS_TESTS=false
+            HAS_CONFIG=false
+            
+            # Analyze file patterns
+            echo "$CHANGED_FILES" | while read -r file; do
+              case "$file" in
+                infrastructure/*)
+                  echo "🏗️  Infrastructure change detected: $file"
+                  echo "HAS_INFRASTRUCTURE=true" >> /tmp/change_types.txt
+                  ;;
+                .github/workflows/*)
+                  echo "⚙️  Workflow change detected: $file"
+                  echo "HAS_WORKFLOWS=true" >> /tmp/change_types.txt
+                  ;;
+                src/gengines/*)
+                  echo "🔧 Gengine change detected: $file"
+                  echo "HAS_GENGINES=true" >> /tmp/change_types.txt
+                  ;;
+                *.md|docs/*)
+                  echo "📚 Documentation change detected: $file"
+                  echo "HAS_DOCS=true" >> /tmp/change_types.txt
+                  ;;
+                *test*|*.test.*|test/*)
+                  echo "🧪 Test change detected: $file"
+                  echo "HAS_TESTS=true" >> /tmp/change_types.txt
+                  ;;
+                *.yaml|*.yml|*.json|*.toml|*.env|*config*)
+                  echo "⚙️  Configuration change detected: $file"
+                  echo "HAS_CONFIG=true" >> /tmp/change_types.txt
+                  ;;
+                *)
+                  echo "📝 Code change detected: $file"
+                  ;;
+              esac
+            done
+            
+            # Process change types
+            if [ -f /tmp/change_types.txt ]; then
+              sort /tmp/change_types.txt | uniq > /tmp/change_types_unique.txt
+              
+              # Check for infrastructure changes
+              if grep -q "HAS_INFRASTRUCTURE=true" /tmp/change_types_unique.txt; then
+                HAS_INFRASTRUCTURE=true
+              fi
+              
+              # Check for workflow changes
+              if grep -q "HAS_WORKFLOWS=true" /tmp/change_types_unique.txt; then
+                HAS_WORKFLOWS=true
+              fi
+              
+              # Check for gengine changes
+              if grep -q "HAS_GENGINES=true" /tmp/change_types_unique.txt; then
+                HAS_GENGINES=true
+              fi
+              
+              # Check for documentation changes
+              if grep -q "HAS_DOCS=true" /tmp/change_types_unique.txt; then
+                HAS_DOCS=true
+              fi
+              
+              # Check for test changes
+              if grep -q "HAS_TESTS=true" /tmp/change_types_unique.txt; then
+                HAS_TESTS=true
+              fi
+              
+              # Check for configuration changes
+              if grep -q "HAS_CONFIG=true" /tmp/change_types_unique.txt; then
+                HAS_CONFIG=true
+              fi
+            fi
+            
+            # Set output variables
+            echo "has_infrastructure=$HAS_INFRASTRUCTURE" >> $GITHUB_OUTPUT
+            echo "has_workflows=$HAS_WORKFLOWS" >> $GITHUB_OUTPUT
+            echo "has_gengines=$HAS_GENGINES" >> $GITHUB_OUTPUT
+            echo "has_docs=$HAS_DOCS" >> $GITHUB_OUTPUT
+            echo "has_tests=$HAS_TESTS" >> $GITHUB_OUTPUT
+            echo "has_config=$HAS_CONFIG" >> $GITHUB_OUTPUT
+            
+            # Determine risk level
+            RISK_LEVEL="low"
+            if [ "$HAS_INFRASTRUCTURE" = "true" ] || [ "$HAS_WORKFLOWS" = "true" ]; then
+              RISK_LEVEL="high"
+              echo "⚠️  HIGH RISK: Infrastructure or workflow changes detected"
+            elif [ "$HAS_CONFIG" = "true" ]; then
+              RISK_LEVEL="medium"
+              echo "⚠️  MEDIUM RISK: Configuration changes detected"
+            elif [ "$HAS_GENGINES" = "true" ]; then
+              RISK_LEVEL="medium"
+              echo "⚠️  MEDIUM RISK: Gengine changes detected"
+            elif [ "$HAS_DOCS" = "true" ] && [ "$HAS_TESTS" = "true" ]; then
+              RISK_LEVEL="low"
+              echo "✅ LOW RISK: Documentation and test changes only"
+            else
+              echo "✅ LOW RISK: Standard code changes"
+            fi
+            
+            echo "risk_level=$RISK_LEVEL" >> $GITHUB_OUTPUT
+            echo "🎯 Overall risk level: $RISK_LEVEL"
+            
+            # Create change type summary
+            CHANGE_SUMMARY=""
+            if [ "$HAS_INFRASTRUCTURE" = "true" ]; then
+              CHANGE_SUMMARY="$CHANGE_SUMMARY\n- 🏗️  Infrastructure changes"
+            fi
+            if [ "$HAS_WORKFLOWS" = "true" ]; then
+              CHANGE_SUMMARY="$CHANGE_SUMMARY\n- ⚙️  Workflow changes"
+            fi
+            if [ "$HAS_GENGINES" = "true" ]; then
+              CHANGE_SUMMARY="$CHANGE_SUMMARY\n- 🔧 Gengine changes"
+            fi
+            if [ "$HAS_CONFIG" = "true" ]; then
+              CHANGE_SUMMARY="$CHANGE_SUMMARY\n- ⚙️  Configuration changes"
+            fi
+            if [ "$HAS_DOCS" = "true" ]; then
+              CHANGE_SUMMARY="$CHANGE_SUMMARY\n- 📚 Documentation changes"
+            fi
+            if [ "$HAS_TESTS" = "true" ]; then
+              CHANGE_SUMMARY="$CHANGE_SUMMARY\n- 🧪 Test changes"
+            fi
+            if [ -z "$CHANGE_SUMMARY" ]; then
+              CHANGE_SUMMARY="\n- 📝 Code changes"
+            fi
+            
+            echo "change_summary=$CHANGE_SUMMARY" >> $GITHUB_OUTPUT
           fi
 
       - name: Create promotion PR
@@ -91,13 +265,25 @@ jobs:
           # Read recent changes from file
           RECENT_CHANGES=$(cat /tmp/commits.txt)
           
+          # Determine PR title based on risk level
+          RISK_EMOJI="🚀"
+          if [ "${{ steps.changes.outputs.risk_level }}" = "high" ]; then
+            RISK_EMOJI="⚠️"
+          elif [ "${{ steps.changes.outputs.risk_level }}" = "medium" ]; then
+            RISK_EMOJI="🔶"
+          fi
+          
           gh pr create \
-            --title "🚀 Promote to Production (${{ steps.changes.outputs.commit_count }} commits)" \
+            --title "$RISK_EMOJI Promote to Production (${{ steps.changes.outputs.commit_count }} commits) - ${{ steps.changes.outputs.risk_level }} risk" \
             --body "## Branch Promotion: Dev → Main
 
           **Environment:** Production
           **Commits:** ${{ steps.changes.outputs.commit_count }}
+          **Risk Level:** ${{ steps.changes.outputs.risk_level }}
           **Staging Status:** ${{ steps.staging-check.outputs.staging_healthy == 'true' && '✅ Healthy' || '❌ Unhealthy' }}
+
+          ### Change Types
+          ${{ steps.changes.outputs.change_summary }}
 
           ### Recent Changes
           $RECENT_CHANGES
@@ -106,12 +292,21 @@ jobs:
           - [x] Staging environment is healthy
           - [x] All required status checks passed
           - [x] Changes have been tested in staging
+          - [x] Staging workflows (validation, testing) are passing
+          - [x] Change type analysis completed
           - [ ] Manual review and approval required
+
+          ### Risk Assessment
+          - **Infrastructure Changes:** ${{ steps.changes.outputs.has_infrastructure == 'true' && 'Yes ⚠️' || 'No ✅' }}
+          - **Workflow Changes:** ${{ steps.changes.outputs.has_workflows == 'true' && 'Yes ⚠️' || 'No ✅' }}
+          - **Gengine Changes:** ${{ steps.changes.outputs.has_gengines == 'true' && 'Yes 🔧' || 'No ✅' }}
+          - **Configuration Changes:** ${{ steps.changes.outputs.has_config == 'true' && 'Yes ⚙️' || 'No ✅' }}
 
           ### Deployment Impact
           - **Target:** Production environment (main branch)
           - **Flux Sync:** Changes will be deployed via FluxCD
           - **Rollback:** Available via Git revert if needed
+          - **Risk Level:** ${{ steps.changes.outputs.risk_level }}
 
           ### Post-Deployment
           1. Monitor production environment
@@ -123,14 +318,126 @@ jobs:
           *This PR was automatically created by the Branch Promotion workflow*" \
             --base main \
             --head dev \
-            --label "promotion,production,deployment,infrastructure"
+            --label "promotion,production,deployment,${{ steps.changes.outputs.risk_level }}-risk${{ steps.changes.outputs.has_infrastructure == 'true' && ',infrastructure' || '' }}${{ steps.changes.outputs.has_workflows == 'true' && ',workflows' || '' }}${{ steps.changes.outputs.has_gengines == 'true' && ',gengines' || '' }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Configure high-risk change requirements
+        if: steps.changes.outputs.has_changes == 'true' && steps.pr-check.outputs.exists == 'false' && steps.changes.outputs.risk_level == 'high'
+        run: |
+          echo "⚠️  HIGH RISK CHANGES DETECTED - Manual approval required"
+          
+          # Get the PR number that was just created
+          PR_NUMBER=$(gh pr list --head dev --base main --json number --jq '.[0].number')
+          
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Configuring high-risk change requirements for PR #$PR_NUMBER"
+            
+            # Add high-risk label
+            gh pr edit $PR_NUMBER --add-label "high-risk,requires-manual-approval"
+            
+            # Add a comment explaining the manual approval requirement
+            gh pr comment $PR_NUMBER --body "⚠️  **HIGH RISK CHANGES DETECTED**
+
+            This PR contains high-risk changes that require manual approval before merging:
+            
+            **Change Types:**
+            - Infrastructure changes: ${{ steps.changes.outputs.has_infrastructure == 'true' && 'Yes ⚠️' || 'No' }}
+            - Workflow changes: ${{ steps.changes.outputs.has_workflows == 'true' && 'Yes ⚠️' || 'No' }}
+            
+            **Required Actions:**
+            1. ✅ Review all changes carefully
+            2. ✅ Verify staging environment is stable
+            3. ✅ Confirm production readiness
+            4. ✅ Manually approve this PR
+            
+            **⚠️  AUTO-MERGE IS DISABLED** for this PR due to high-risk changes.
+            
+            To proceed:
+            - Review and approve this PR manually
+            - Merge will be available after approval
+            
+            ---
+            *This comment was automatically generated by the Branch Promotion workflow*"
+            
+            echo "High-risk change requirements configured for PR #$PR_NUMBER"
+          else
+            echo "Could not find PR to configure high-risk requirements"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Configure medium-risk change requirements
+        if: steps.changes.outputs.has_changes == 'true' && steps.pr-check.outputs.exists == 'false' && steps.changes.outputs.risk_level == 'medium'
+        run: |
+          echo "🔶 MEDIUM RISK CHANGES DETECTED - Enhanced review recommended"
+          
+          # Get the PR number that was just created
+          PR_NUMBER=$(gh pr list --head dev --base main --json number --jq '.[0].number')
+          
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Configuring medium-risk change requirements for PR #$PR_NUMBER"
+            
+            # Add medium-risk label
+            gh pr edit $PR_NUMBER --add-label "medium-risk,enhanced-review"
+            
+            # Add a comment explaining the enhanced review
+            gh pr comment $PR_NUMBER --body "🔶 **MEDIUM RISK CHANGES DETECTED**
+
+            This PR contains medium-risk changes that should be reviewed carefully:
+            
+            **Change Types:**
+            - Configuration changes: ${{ steps.changes.outputs.has_config == 'true' && 'Yes ⚙️' || 'No' }}
+            - Gengine changes: ${{ steps.changes.outputs.has_gengines == 'true' && 'Yes 🔧' || 'No' }}
+            
+            **Recommended Actions:**
+            1. ✅ Review configuration changes
+            2. ✅ Verify gengine compatibility
+            3. ✅ Monitor deployment closely
+            
+            **ℹ️  AUTO-MERGE IS AVAILABLE** but enhanced monitoring is recommended.
+            
+            ---
+            *This comment was automatically generated by the Branch Promotion workflow*"
+            
+            echo "Medium-risk change requirements configured for PR #$PR_NUMBER"
+          else
+            echo "Could not find PR to configure medium-risk requirements"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update existing PR
         if: steps.changes.outputs.has_changes == 'true' && steps.pr-check.outputs.exists == 'true'
         run: |
-          gh pr comment ${{ steps.pr-check.outputs.pr_number }} --body "🔄 **Promotion Update**: New changes available for promotion to production (${{ steps.changes.outputs.commit_count }} total commits)"
+          # Update the existing PR with new information
+          gh pr comment ${{ steps.pr-check.outputs.pr_number }} --body "🔄 **Promotion Update**: New changes available for promotion to production
+          
+          **Updated Status:**
+          - Total commits: ${{ steps.changes.outputs.commit_count }}
+          - Risk level: ${{ steps.changes.outputs.risk_level }}
+          - Staging health: ${{ steps.staging-check.outputs.staging_healthy == 'true' && 'Healthy ✅' || 'Unhealthy ❌' }}
+          
+          **Change Types:**
+          ${{ steps.changes.outputs.change_summary }}
+          
+          **Risk Assessment:**
+          - Infrastructure changes: ${{ steps.changes.outputs.has_infrastructure == 'true' && 'Yes ⚠️' || 'No ✅' }}
+          - Workflow changes: ${{ steps.changes.outputs.has_workflows == 'true' && 'Yes ⚠️' || 'No ✅' }}
+          
+          Please review the updated changes before proceeding with the promotion."
+          
+          # Update labels based on new risk level
+          if [ "${{ steps.changes.outputs.risk_level }}" = "high" ]; then
+            gh pr edit ${{ steps.pr-check.outputs.pr_number }} --add-label "high-risk,requires-manual-approval"
+            gh pr edit ${{ steps.pr-check.outputs.pr_number }} --remove-label "medium-risk,low-risk" || true
+          elif [ "${{ steps.changes.outputs.risk_level }}" = "medium" ]; then
+            gh pr edit ${{ steps.pr-check.outputs.pr_number }} --add-label "medium-risk,enhanced-review"
+            gh pr edit ${{ steps.pr-check.outputs.pr_number }} --remove-label "high-risk,low-risk" || true
+          else
+            gh pr edit ${{ steps.pr-check.outputs.pr_number }} --add-label "low-risk"
+            gh pr edit ${{ steps.pr-check.outputs.pr_number }} --remove-label "high-risk,medium-risk" || true
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -144,3 +451,11 @@ jobs:
         run: |
           echo "⚠️ Staging environment is unhealthy - skipping promotion"
           echo "Use 'force_promotion' workflow input to override this check"
+          echo "Recent staging status:"
+          echo "  - Flux validation: $(gh run list --workflow="Flux Manifest Validation" --branch=dev --limit=1 --json conclusion --jq '.[0].conclusion')"
+          echo "  - Comprehensive testing: $(gh run list --workflow="Comprehensive Testing Pipeline" --branch=dev --limit=1 --json conclusion --jq '.[0].conclusion')"
+          echo "  - E2E testing: $(gh run list --workflow="Flux End-to-End Testing" --branch=dev --limit=1 --json conclusion --jq '.[0].conclusion')"
+          echo ""
+          echo "To force promotion despite staging issues, manually trigger this workflow with force_promotion=true"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
