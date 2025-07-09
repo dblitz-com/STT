@@ -276,4 +276,4 @@ If you're currently using individual MCP server entries in your `.mcp.json`:
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - see LICENSE file for details.# Testing branch promotion trigger
