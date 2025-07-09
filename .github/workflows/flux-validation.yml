@@ -1,0 +1,54 @@
+name: Flux Manifest Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup Flux CLI
+        uses: fluxcd/flux2/action@main
+        with:
+          version: 'latest'
+          
+      - name: Check Flux CLI version
+        run: |
+          # Check Flux CLI version
+          flux --version
+          
+      - name: Validate Flux manifests
+        run: |
+          # Validate YAML syntax for staging manifests
+          find ./infrastructure/clusters/staging -name "*.yaml" -o -name "*.yml" | xargs -I {} sh -c 'echo "Validating {}" && cat "{}" | yq eval . > /dev/null'
+          
+          # Validate YAML syntax for production manifests  
+          find ./infrastructure/clusters/production -name "*.yaml" -o -name "*.yml" | xargs -I {} sh -c 'echo "Validating {}" && cat "{}" | yq eval . > /dev/null'
+          
+      - name: Check Flux install manifests
+        run: |
+          # Generate Flux system manifests and verify they're valid YAML
+          flux install --export > /tmp/flux-system.yaml
+          yq eval . /tmp/flux-system.yaml > /dev/null
+          echo "✅ Flux install manifests are valid YAML"
+          
+      - name: Validate Kustomizations
+        run: |
+          # Validate kustomizations in both environments using yq
+          find ./infrastructure/clusters -name "kustomization.yaml" -exec sh -c 'echo "Validating {}" && yq eval . "{}" > /dev/null' \;
+          
+      - name: Check for drift
+        run: |
+          # Check if current manifests match expected Flux installation
+          flux install --export > /tmp/expected-flux.yaml
+          if ! diff -q ./infrastructure/clusters/staging/flux-system/gotk-components.yaml /tmp/expected-flux.yaml > /dev/null; then
+            echo "⚠️  Flux components may be outdated in staging"
+            echo "Run 'flux install --export > ./infrastructure/clusters/staging/flux-system/gotk-components.yaml' to update"
+          fi
