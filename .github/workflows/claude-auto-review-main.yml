@@ -1,0 +1,72 @@
+name: Claude Auto Review (Production PRs)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]  # Only trigger for PRs targeting main branch
+
+jobs:
+  claude-production-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comprehensive analysis
+
+      - name: Claude Production PR Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          timeout_minutes: "60"
+          direct_prompt: |
+            🚀 **PRODUCTION DEPLOYMENT REVIEW** 🚀
+            
+            This PR is targeting the MAIN branch for production deployment. Please provide a comprehensive security and production readiness review.
+            
+            **Critical Review Areas:**
+            
+            🔒 **Security Analysis:**
+            - Review for potential security vulnerabilities
+            - Check for secrets, API keys, or sensitive data exposure
+            - Validate input sanitization and validation
+            - Assess authentication and authorization changes
+            
+            🏗️ **Infrastructure & Configuration:**
+            - Review infrastructure changes for production impact
+            - Validate Kubernetes manifests and FluxCD configurations
+            - Check environment-specific configurations
+            - Assess database migrations and schema changes
+            
+            ⚡ **Performance & Reliability:**
+            - Identify potential performance bottlenecks
+            - Review error handling and graceful degradation
+            - Check resource utilization and scaling considerations
+            - Validate monitoring and observability
+            
+            🧪 **Testing & Quality:**
+            - Verify test coverage for production scenarios
+            - Check for proper integration and e2e tests
+            - Review rollback strategies and deployment safety
+            - Validate breaking change assessments
+            
+            📋 **Production Checklist:**
+            - [ ] Security vulnerabilities addressed
+            - [ ] Infrastructure changes validated
+            - [ ] Performance impact assessed
+            - [ ] Monitoring and alerting configured
+            - [ ] Rollback strategy documented
+            - [ ] Breaking changes documented
+            
+            **Output Format:**
+            - Use inline comments for specific code issues
+            - Provide an overall risk assessment (LOW/MEDIUM/HIGH)
+            - List any blockers that must be resolved before production
+            - Suggest additional validation steps if needed
+            
+            **Remember:** This is going to PRODUCTION - be thorough and conservative in your assessment.
+          allowed_tools: "mcp__github__create_pending_pull_request_review,mcp__github__add_pull_request_review_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__get_pull_request_diff,mcp__github__get_pull_request_files"
