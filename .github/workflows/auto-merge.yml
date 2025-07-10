@@ -124,6 +124,13 @@ jobs:
             echo "❌ Failed to parse essential PR information"
             exit 1
           fi
+          
+          # Set outputs for next steps
+          echo "base_branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
+          echo "head_branch=$HEAD_BRANCH" >> $GITHUB_OUTPUT
+          echo "state=$STATE" >> $GITHUB_OUTPUT
+          echo "mergeable=$MERGEABLE" >> $GITHUB_OUTPUT
+          echo "review_decision=$REVIEW_DECISION" >> $GITHUB_OUTPUT
 
       - name: Check for submodule-only changes
         id: submodule-check
@@ -154,11 +161,6 @@ jobs:
             echo "submodule_only=false" >> $GITHUB_OUTPUT
           fi
           
-          echo "base_branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
-          echo "head_branch=$HEAD_BRANCH" >> $GITHUB_OUTPUT
-          echo "state=$STATE" >> $GITHUB_OUTPUT
-          echo "mergeable=$MERGEABLE" >> $GITHUB_OUTPUT
-          echo "review_decision=$REVIEW_DECISION" >> $GITHUB_OUTPUT
           
           # Check status checks with error handling
           echo "🔍 Analyzing status checks..."
