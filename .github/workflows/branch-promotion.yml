@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - dev
+    paths-ignore:
+      - 'src/gengines/**'  # Exclude submodules - handled by submodule-testing.yml
   workflow_dispatch:
     inputs:
       force_promotion:

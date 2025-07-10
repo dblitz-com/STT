@@ -1,0 +1,125 @@
+name: Claude Enhanced with SOPS Secrets
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  claude-enhanced:
+    if: contains(github.event.comment.body, '@claude') || contains(github.event.issue.body, '@claude')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup SOPS and decrypt MCP secrets
+        run: |
+          # Install SOPS and yq (industry standard tools)
+          curl -LO https://github.com/getsops/sops/releases/latest/download/sops-v3.8.1.linux.amd64
+          curl -LO https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo mv sops-v3.8.1.linux.amd64 /usr/local/bin/sops
+          sudo mv yq_linux_amd64 /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/sops /usr/local/bin/yq
+          
+          # Setup Age key and decrypt secrets (validated approach)
+          echo "${{ secrets.SOPS_AGE_KEY }}" > age.key
+          SOPS_AGE_KEY_FILE=age.key sops -d infrastructure/apps/overlays/staging/mcp-secrets.sops.yaml | \
+            yq '.stringData | to_entries | .[] | .key + "=" + .value' >> $GITHUB_ENV
+          
+          # Clean up private key (security best practice)
+          rm age.key
+          
+          echo "✅ SOPS secrets decrypted using industry-standard approach"
+
+      - name: Run Claude with Full MCP Stack
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Claude auto-detects .mcp.json and substitutes environment variables!
+          allowed_tools: |
+            mcp__taskmaster-ai__initialize_project,
+            mcp__taskmaster-ai__get_tasks,
+            mcp__taskmaster-ai__add_task,
+            mcp__taskmaster-ai__set_task_status,
+            mcp__taskmaster-ai__update_task,
+            mcp__taskmaster-ai__next_task,
+            mcp__sequential-thinking__sequentialthinking,
+            mcp__perplexity-ask__perplexity_ask,
+            mcp__Context7__resolve-library-id,
+            mcp__Context7__get-library-docs,
+            mcp__firecrawl-mcp__firecrawl_scrape,
+            mcp__firecrawl-mcp__firecrawl_search,
+            mcp__firecrawl-mcp__firecrawl_extract,
+            mcp__puppeteer__puppeteer_navigate,
+            mcp__puppeteer__puppeteer_screenshot,
+            mcp__github__create_pull_request,
+            mcp__github__list_issues,
+            mcp__github__get_issue,
+            mcp__github__add_issue_comment,
+            mcp__github__get_workflow_runs,
+            mcp__github__list_workflow_runs,
+            mcp__gmail-mcp__gmail_users_drafts_create,
+            mcp__gmail-mcp__gmail_users_messages_send,
+            Bash(pre-commit run --all-files),
+            Bash(sops --version),
+            Bash(kubectl version --client),
+            Bash(flux version),
+            Read,
+            Write,
+            Edit,
+            Glob,
+            Grep
+          additional_permissions: |
+            actions: read
+          custom_instructions: |
+            🚀 ENHANCED CLAUDE with GitOps-Compliant MCP Stack:
+            
+            You now have access to our complete MCP ecosystem via industry-standard SOPS encryption:
+            
+            **AVAILABLE MCP SERVERS:**
+            - taskmaster-ai: Project planning and task management with SOPS-secured OpenAI access
+            - sequential-thinking: Complex problem analysis capabilities  
+            - perplexity-ask: Real-time research with SOPS-secured Perplexity API access
+            - Context7: Library documentation and API references
+            - firecrawl-mcp: Web scraping and content analysis with SOPS-secured API access
+            - puppeteer: Browser automation and testing
+            - github: PR management and workflow analysis with SOPS-secured GitHub token
+            - gmail-mcp: Email automation with SOPS-secured OAuth credentials
+            
+            **SECURITY COMPLIANCE:**
+            - All secrets managed via SOPS encryption following GitOps best practices
+            - Age key stored in GitHub secrets per industry recommendations
+            - Pre-commit hooks enforce secret detection policies
+            - Branch protection prevents web UI bypass
+            - Zero hardcoded secrets - all injected via environment variables
+            
+            **DEVELOPMENT WORKFLOW:**
+            - Always run 'pre-commit run --all-files' before commits
+            - Use GitHub tools for PR creation and CI/CD analysis
+            - Follow our established GitOps principles for infrastructure changes
+            - Validate SOPS encryption with 'sops --version'
+            - Check Flux status with 'flux version'
+            - Use kubectl for Kubernetes operations when needed
+            
+            **PROJECT CONTEXT:**
+            - This is a GitOps-managed infrastructure repository
+            - All secrets are encrypted with SOPS and Age
+            - Infrastructure is deployed via FluxCD
+            - Auto-merge workflows validate secret scanning
+            - Multi-layered security with pre-commit + GitHub Actions + branch protection
+          max_turns: "20"
+          claude_env: |
+            NODE_ENV: development
+            CI: true
+            FLUX_NAMESPACE: flux-system
+            SOPS_ENABLED: true
+            GITOPS_ENVIRONMENT: staging
+            MCP_CONFIG_FILE: .mcp.json

@@ -1,0 +1,19 @@
+# OPTIONAL: Lightweight pre-commit hooks
+# Install with: pre-commit install (optional)
+# Main secret detection happens in CI/CD
+
+repos:
+  # Basic quality checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict  
+      - id: check-yaml
+      - id: check-json
+
+  # Optional GitLeaks (uncomment to enable local secret scanning)
+  # - repo: https://github.com/gitleaks/gitleaks
+  #   rev: v8.21.2
+  #   hooks:
+  #     - id: gitleaks

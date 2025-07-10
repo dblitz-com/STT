@@ -7,3 +7,4 @@ resources:
 - git-sources.yaml
 - namespaces.yaml
 - flagger-setup.yaml
+- sops-age-key.sops.yaml

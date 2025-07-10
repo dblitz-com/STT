@@ -1,0 +1,21 @@
+{
+  "action": "opened",
+  "number": 36,
+  "pull_request": {
+    "number": 36,
+    "title": "Test PR for debugging",
+    "state": "open",
+    "base": {
+      "ref": "dev",
+      "sha": "8c6dd5c0671763ae48193593b3fceea5b80b53f9"
+    },
+    "head": {
+      "ref": "test-new-auto-merge-system",
+      "sha": "8c6dd5c0671763ae48193593b3fceea5b80b53f9"
+    }
+  },
+  "repository": {
+    "name": "engine",
+    "full_name": "dblitz-com/engine"
+  }
+}

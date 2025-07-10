@@ -1,0 +1,234 @@
+name: Submodule Auto-Sync
+
+on:
+  repository_dispatch:
+    types: [submodule-updated]
+  workflow_dispatch:
+    inputs:
+      submodule_name:
+        description: 'Name of submodule to sync (e.g., gengine-rest-api-to-mcp)'
+        required: false
+      force_sync:
+        description: 'Force sync even if no changes detected'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  auto-sync-submodules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          submodules: true
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get trigger information
+        id: trigger-info
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "🔔 Triggered by repository dispatch from submodule"
+            echo "Event type: ${{ github.event.action }}"
+            echo "Client payload: ${{ toJson(github.event.client_payload) }}"
+            
+            # Extract submodule info from payload
+            SUBMODULE_NAME="${{ github.event.client_payload.submodule_name || 'unknown' }}"
+            SUBMODULE_COMMIT="${{ github.event.client_payload.commit_sha || 'latest' }}"
+            SUBMODULE_MESSAGE="${{ github.event.client_payload.commit_message || 'Submodule update' }}"
+            
+            echo "submodule_name=$SUBMODULE_NAME" >> $GITHUB_OUTPUT
+            echo "commit_sha=$SUBMODULE_COMMIT" >> $GITHUB_OUTPUT
+            echo "commit_message=$SUBMODULE_MESSAGE" >> $GITHUB_OUTPUT
+            echo "trigger_type=repository_dispatch" >> $GITHUB_OUTPUT
+            
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "🔧 Triggered manually via workflow dispatch"
+            SUBMODULE_NAME="${{ github.event.inputs.submodule_name || 'all' }}"
+            
+            echo "submodule_name=$SUBMODULE_NAME" >> $GITHUB_OUTPUT
+            echo "commit_sha=latest" >> $GITHUB_OUTPUT
+            echo "commit_message=Manual submodule sync" >> $GITHUB_OUTPUT
+            echo "trigger_type=manual" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update submodules to latest
+        id: submodule-update
+        run: |
+          echo "🔄 Updating submodules to latest commits..."
+          
+          # Get current submodule commit SHAs before update
+          echo "📋 Current submodule commits:"
+          git submodule status
+          
+          # Update submodules to latest from their main branches
+          git submodule update --remote --merge
+          
+          # Check if any submodules were updated
+          if git diff --quiet HEAD -- src/gengines/; then
+            echo "✅ No submodule updates needed - already up to date"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "📝 Submodule updates detected:"
+          git diff --name-only HEAD -- src/gengines/
+          
+          echo "📋 Updated submodule commits:"
+          git submodule status
+          
+          # Get detailed change information
+          CHANGED_SUBMODULES=""
+          for submodule in src/gengines/gengine-rest-api-to-mcp src/gengines/gengine-mcp-catalog; do
+            if git diff --quiet HEAD -- "$submodule"; then
+              continue
+            fi
+            
+            SUBMODULE_NAME=$(basename "$submodule")
+            OLD_COMMIT=$(git diff HEAD -- "$submodule" | grep '^-Subproject commit' | cut -d' ' -f3)
+            NEW_COMMIT=$(git diff HEAD -- "$submodule" | grep '^+Subproject commit' | cut -d' ' -f3)
+            
+            if [ -n "$OLD_COMMIT" ] && [ -n "$NEW_COMMIT" ]; then
+              # Get commit count and summary
+              cd "$submodule"
+              COMMIT_COUNT=$(git rev-list --count "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null || echo "unknown")
+              RECENT_COMMITS=$(git log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" --max-count=5 2>/dev/null || echo "Unable to get commit details")
+              cd - > /dev/null
+              
+              CHANGED_SUBMODULES="$CHANGED_SUBMODULES\n### $SUBMODULE_NAME\n"
+              CHANGED_SUBMODULES="$CHANGED_SUBMODULES- **Commits:** $COMMIT_COUNT new commits\n"
+              CHANGED_SUBMODULES="$CHANGED_SUBMODULES- **From:** \`${OLD_COMMIT:0:8}\` → **To:** \`${NEW_COMMIT:0:8}\`\n"
+              CHANGED_SUBMODULES="$CHANGED_SUBMODULES- **Recent changes:**\n\`\`\`\n$RECENT_COMMITS\n\`\`\`\n"
+            else
+              CHANGED_SUBMODULES="$CHANGED_SUBMODULES\n### $SUBMODULE_NAME\n"
+              CHANGED_SUBMODULES="$CHANGED_SUBMODULES- Updated to latest commit\n"
+            fi
+          done
+          
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "changed_submodules<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$CHANGED_SUBMODULES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create sync branch
+        if: steps.submodule-update.outputs.has_changes == 'true'
+        id: create-branch
+        run: |
+          # Create a unique branch name
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          BRANCH_NAME="auto-sync/submodules-$TIMESTAMP"
+          
+          echo "🌿 Creating sync branch: $BRANCH_NAME"
+          git checkout -b "$BRANCH_NAME"
+          
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Commit submodule updates
+        if: steps.submodule-update.outputs.has_changes == 'true'
+        run: |
+          echo "💾 Committing submodule updates..."
+          
+          # Add submodule changes
+          git add src/gengines/
+          
+          # Create informative commit message
+          TRIGGER_TYPE="${{ steps.trigger-info.outputs.trigger_type }}"
+          if [ "$TRIGGER_TYPE" = "repository_dispatch" ]; then
+            COMMIT_MSG="🔄 Auto-sync: Update ${{ steps.trigger-info.outputs.submodule_name }} submodule"$'\n\n'"Triggered by repository dispatch from submodule repository."$'\n'"Latest commit: ${{ steps.trigger-info.outputs.commit_sha }}"$'\n\n'"${{ steps.trigger-info.outputs.commit_message }}"
+          else
+            COMMIT_MSG="🔄 Auto-sync: Update submodules to latest commits"$'\n\n'"Manually triggered submodule synchronization."
+          fi
+          
+          git commit -m "$COMMIT_MSG"
+          
+          echo "📤 Pushing sync branch..."
+          git push origin "${{ steps.create-branch.outputs.branch_name }}"
+
+      - name: Create Pull Request
+        if: steps.submodule-update.outputs.has_changes == 'true'
+        run: |
+          TRIGGER_TYPE="${{ steps.trigger-info.outputs.trigger_type }}"
+          BRANCH_NAME="${{ steps.create-branch.outputs.branch_name }}"
+          
+          # Determine PR title based on trigger type
+          if [ "$TRIGGER_TYPE" = "repository_dispatch" ]; then
+            PR_TITLE="🔄 Auto-sync: ${{ steps.trigger-info.outputs.submodule_name }} submodule updated"
+            TRIGGER_INFO="**Trigger:** Repository dispatch from \`${{ steps.trigger-info.outputs.submodule_name }}\` submodule"
+          else
+            PR_TITLE="🔄 Auto-sync: Submodule updates (manual)"
+            TRIGGER_INFO="**Trigger:** Manual workflow dispatch"
+          fi
+          
+          # Create PR body using direct variable assignment (safer than heredoc)
+          PR_BODY="## Automated Submodule Synchronization
+
+          $TRIGGER_INFO
+
+          ### Changes
+          ${{ steps.submodule-update.outputs.changed_submodules }}
+
+          ### GitOps Workflow
+          This PR will automatically trigger the complete GitOps pipeline:
+
+          1. ✅ **Submodule Testing** - \`submodule-testing.yml\` will validate submodule changes
+          2. ✅ **Auto-Merge** - PR will auto-merge after submodule tests pass
+          3. ✅ **FluxCD Sync** - Changes will deploy to staging environment
+          4. ✅ **Production Ready** - Available for promotion to main branch
+
+          ### Next Steps
+          - ⏳ Submodule tests are running automatically
+          - ⏳ Auto-merge will trigger once tests pass
+          - ⏳ Staging deployment will occur via FluxCD
+          - 📋 Monitor staging environment for issues
+
+          ### Coding Agent Integration
+          This sync ensures that changes made by coding agents in submodule repositories automatically flow through the main GitOps pipeline, maintaining proper testing and deployment workflows.
+
+          ---
+          *This PR was automatically created by the Submodule Auto-Sync workflow*
+          *Branch: \`$BRANCH_NAME\`*"
+          
+          # Write PR body to file
+          echo "$PR_BODY" > /tmp/pr_body.md
+          
+          # Create PR
+          gh pr create \
+            --title "$PR_TITLE" \
+            --body-file /tmp/pr_body.md \
+            --base dev \
+            --head "$BRANCH_NAME" \
+            --label "auto-sync,submodules,gitops"
+            
+          echo "✅ Created auto-sync PR for submodule updates"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No changes detected
+        if: steps.submodule-update.outputs.has_changes == 'false'
+        run: |
+          echo "ℹ️ No submodule updates needed - all submodules are already up to date"
+          echo "Current submodule status:"
+          git submodule status
+
+      - name: Summary
+        if: steps.submodule-update.outputs.has_changes == 'true'
+        run: |
+          echo "🎉 Submodule Auto-Sync Summary:"
+          echo "✅ Submodules updated to latest commits"
+          echo "✅ Sync branch created: ${{ steps.create-branch.outputs.branch_name }}"
+          echo "✅ Pull request created for GitOps pipeline"
+          echo "✅ Auto-merge will trigger after submodule tests pass"
+          echo ""
+          echo "🔄 GitOps Flow Activated:"
+          echo "  Submodule Repo → Repository Dispatch → Main Repo → PR → Tests → Auto-Merge → FluxCD → Deployment"

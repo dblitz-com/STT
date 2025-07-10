@@ -1,4 +1,4 @@
-name: Claude Code
+name: Claude Code with MCP Integration
 
 on:
   issue_comment:
@@ -19,9 +19,10 @@ jobs:
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
       id-token: write
     steps:
       - name: Checkout repository
@@ -29,11 +30,70 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run Claude Code
+      - name: Setup SOPS and decrypt MCP secrets
+        uses: ./.github/actions/setup-sops-secrets
+        with:
+          sops-age-key: ${{ secrets.SOPS_AGE_KEY }}
+          environment: staging
+
+      - name: Run Claude Code with Full MCP Stack
         id: claude
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          allowed_tools: "Bash(bun install),Bash(bun test:*),Bash(bun run format),Bash(bun typecheck)"
-          custom_instructions: "You have also been granted tools for editing files and running bun commands (install, run, test, typecheck) for testing your changes: bun install, bun test, bun run format, bun typecheck."
-          model: "claude-opus-4-20250514"
+          allowed_tools: |
+            Bash(bun install),
+            Bash(bun test:*),
+            Bash(bun run format),
+            Bash(bun typecheck),
+            Bash(pre-commit run --all-files),
+            Bash(sops --version),
+            mcp__taskmaster-ai__get_tasks,
+            mcp__taskmaster-ai__add_task,
+            mcp__taskmaster-ai__set_task_status,
+            mcp__sequential-thinking__sequentialthinking,
+            mcp__perplexity-ask__perplexity_ask,
+            mcp__Context7__resolve-library-id,
+            mcp__Context7__get-library-docs,
+            mcp__firecrawl-mcp__firecrawl_scrape,
+            mcp__github__create_pull_request,
+            mcp__github__list_issues,
+            mcp__github__get_issue,
+            mcp__github__add_issue_comment,
+            Read,
+            Write,
+            Edit,
+            Glob,
+            Grep
+          custom_instructions: |
+            🚀 CLAUDE with GitOps-Compliant MCP Integration:
+            
+            **PROJECT CONTEXT:**
+            You're working on a GitOps-managed infrastructure repository with SOPS-encrypted secrets.
+            
+            **AVAILABLE MCP SERVERS:**
+            - taskmaster-ai: Task management with OpenAI integration
+            - sequential-thinking: Complex problem analysis
+            - perplexity-ask: Real-time research capabilities  
+            - Context7: Library documentation lookup
+            - firecrawl-mcp: Web scraping and content extraction
+            - github: Repository management and PR operations
+            
+            **DEVELOPMENT WORKFLOW:**
+            - Run 'bun install', 'bun test', 'bun run format', 'bun typecheck' for TypeScript/JS projects
+            - Always run 'pre-commit run --all-files' to validate security policies
+            - Use GitHub MCP tools for issue and PR management
+            - Follow GitOps principles for infrastructure changes
+            - All secrets are managed via SOPS encryption
+            
+            **SECURITY REQUIREMENTS:**
+            - Never hardcode secrets or API keys
+            - Validate SOPS functionality with 'sops --version' 
+            - Run pre-commit hooks before any commits
+            - Follow established secret detection policies
+          model: "claude-sonnet-4-20250514"
+          claude_env: |
+            NODE_ENV: development
+            CI: true
+            SOPS_ENABLED: true
+            GITOPS_ENVIRONMENT: staging

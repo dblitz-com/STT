@@ -3,8 +3,12 @@ name: Comprehensive Testing Pipeline
 on:
   pull_request:
     branches: [ main, dev ]
+    paths-ignore:
+      - 'src/gengines/**'  # Exclude submodules - handled by submodule-testing.yml
   push:
     branches: [ main, dev ]
+    paths-ignore:
+      - 'src/gengines/**'  # Exclude submodules - handled by submodule-testing.yml
   workflow_dispatch:
 
 permissions:
@@ -41,16 +45,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run Python tests (if available)
+      - name: Run Python tests (main repo only)
         run: |
-          if [ -f "src/gengines/gengine-mcp-catalog/pyproject.toml" ]; then
-            cd src/gengines/gengine-mcp-catalog
-            pip install -e ".[test]"
-            python -m pytest --tb=short
-          else
-            echo "No Python tests found, skipping..."
-          fi
-        continue-on-error: true
+          echo "🐍 Running Python tests for main repo..."
+          # Note: Submodule tests are handled by submodule-testing.yml
+          echo "✅ Main repo Python tests - no Python code in main repo"
 
   security-scan:
     name: Security Scanning

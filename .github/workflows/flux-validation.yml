@@ -15,6 +15,9 @@ on:
       - '.github/workflows/flux-validation.yml'
       - '.github/workflows/flux-e2e.yml'
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest

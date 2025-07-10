@@ -1,18 +1,22 @@
 creation_rules:
   # Flux system secrets
   - path_regex: infrastructure/clusters/.*/.*\.sops\.yaml$
-    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+    age: age1jvdaxyz9yn2cspr6mfk9v7gf9282fnnre8wutg86wlavr968tvtqyn8a5z
   
   # Application secrets by environment
   - path_regex: infrastructure/apps/overlays/dev/.*\.sops\.yaml$
-    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+    age: age1jvdaxyz9yn2cspr6mfk9v7gf9282fnnre8wutg86wlavr968tvtqyn8a5z
   
   - path_regex: infrastructure/apps/overlays/staging/.*\.sops\.yaml$
-    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+    age: age1jvdaxyz9yn2cspr6mfk9v7gf9282fnnre8wutg86wlavr968tvtqyn8a5z
   
   - path_regex: infrastructure/apps/overlays/prod/.*\.sops\.yaml$
-    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+    age: age1jvdaxyz9yn2cspr6mfk9v7gf9282fnnre8wutg86wlavr968tvtqyn8a5z
   
-  # Terraform secrets
+  # Catch-all for any .sops.yaml files
+  - path_regex: .*\.sops\.yaml$
+    age: age1jvdaxyz9yn2cspr6mfk9v7gf9282fnnre8wutg86wlavr968tvtqyn8a5z
+  
+  # Terraform secrets  
   - path_regex: infrastructure/terraform/.*\.sops\.yaml$
-    age: age1placeholder_replace_with_actual_public_key_from_age_keygen
+    age: age1jvdaxyz9yn2cspr6mfk9v7gf9282fnnre8wutg86wlavr968tvtqyn8a5z

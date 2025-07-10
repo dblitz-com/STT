@@ -190,7 +190,10 @@ jobs:
             done
           fi
           
-          echo "submodules=$submodules_json" >> $GITHUB_OUTPUT
+          # Use proper GitHub Actions output format for multi-line JSON
+          echo "submodules<<EOF" >> $GITHUB_OUTPUT
+          echo "$submodules_json" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "has-submodules=$has_submodules" >> $GITHUB_OUTPUT
           
           echo "🎯 Detected submodules:"

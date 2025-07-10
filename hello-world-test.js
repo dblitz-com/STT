@@ -16,6 +16,7 @@ console.log('🚀 Testing: Feature → Dev → Main branch protection');
 console.log('🔄 Update: Testing workflow with a simple low-risk change');
 console.log('🤖 Auto-merge test: This should merge automatically to dev!');
 console.log('✨ Final test: Validating complete GitOps auto-merge workflow!');
+console.log('🎯 New auto-merge system test: Enhanced triggers and GitHub native integration!');
 
 // Simple test function
 function testGitOpsWorkflow() {

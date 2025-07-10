@@ -6,6 +6,7 @@ namespace: staging
 # Reference to base configuration
 resources:
   - ../../base
+  - mcp-secrets.sops.yaml
 
 # Environment-specific labels
 commonLabels:

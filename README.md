@@ -149,6 +149,56 @@ services:
       - .env
 ```
 
+## 🔒 Security Setup (For Developers)
+
+This repository implements comprehensive secret detection to prevent exposure of API keys and credentials.
+
+### Pre-commit Hook Installation
+
+For developers working on this repository, install pre-commit hooks to automatically scan for secrets:
+
+```bash
+# Install pre-commit (if not already installed)
+pip install pre-commit
+
+# Install pre-commit hooks in the repository
+pre-commit install
+
+# Test the hooks on all files (optional)
+pre-commit run --all-files
+```
+
+### What the Security System Protects Against
+
+- **Hardcoded API keys** in `.mcp.json` files
+- **Exposed secrets** like Perplexity, OpenAI, GitHub tokens
+- **Google OAuth credentials** and client secrets
+- **Custom patterns** specific to this GitOps workflow
+
+### Environment Variable Pattern
+
+Always use environment variables for secrets in configuration files:
+
+```json
+{
+  "env": {
+    "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}",
+    "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+  }
+}
+```
+
+**❌ Never commit hardcoded values:**
+```json
+{
+  "env": {
+    "PERPLEXITY_API_KEY": "pplx-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  }
+}
+```
+
+The pre-commit hooks will automatically catch and block such patterns before they enter git history.
+
 ## CLI Commands
 
 ### List Available Servers

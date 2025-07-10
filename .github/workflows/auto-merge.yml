@@ -40,6 +40,8 @@ jobs:
 
       - name: Get PR info
         id: pr-info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🔍 Auto-merge triggered by: ${{ github.event_name }}"
           
@@ -94,8 +96,19 @@ jobs:
           
           # Get PR details with error handling
           echo "📊 Fetching PR #$PR_NUMBER details..."
-          if ! PR_INFO=$(gh pr view $PR_NUMBER --json baseRefName,headRefName,state,mergeable,reviewDecision,statusCheckRollup 2>/dev/null); then
+          
+          # First check if PR exists
+          if ! gh pr view $PR_NUMBER --json number &>/dev/null; then
+            echo "❌ PR #$PR_NUMBER does not exist or is not accessible"
+            echo "🔍 Available PRs:"
+            gh pr list --limit 5 --json number,title || echo "  Could not list PRs"
+            exit 1
+          fi
+          
+          # Get detailed PR info with better error reporting
+          if ! PR_INFO=$(gh pr view $PR_NUMBER --json baseRefName,headRefName,state,mergeable,reviewDecision,statusCheckRollup 2>&1); then
             echo "❌ Failed to fetch PR details for #$PR_NUMBER"
+            echo "Error output: $PR_INFO"
             exit 1
           fi
           
@@ -110,6 +123,35 @@ jobs:
           if [ "$BASE_BRANCH" == "unknown" ] || [ "$STATE" == "unknown" ]; then
             echo "❌ Failed to parse essential PR information"
             exit 1
+          fi
+
+      - name: Check for submodule-only changes
+        id: submodule-check
+        run: |
+          echo "🔍 Checking if PR #${{ steps.pr-info.outputs.pr_number }} contains only submodule changes..."
+          
+          # Get list of changed files
+          CHANGED_FILES=$(gh pr diff ${{ steps.pr-info.outputs.pr_number }} --name-only)
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "📭 No changed files found"
+            echo "submodule_only=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "📋 Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Check if all changes are in src/gengines/ (submodules)
+          NON_SUBMODULE_CHANGES=$(echo "$CHANGED_FILES" | grep -v '^src/gengines/' || true)
+          
+          if [ -z "$NON_SUBMODULE_CHANGES" ]; then
+            echo "🎯 PR contains ONLY submodule changes - skipping auto-merge"
+            echo "💡 Submodule changes are handled by submodule-testing.yml workflow"
+            echo "submodule_only=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ PR contains non-submodule changes - proceeding with auto-merge"
+            echo "submodule_only=false" >> $GITHUB_OUTPUT
           fi
           
           echo "base_branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
@@ -127,11 +169,11 @@ jobs:
             STATUS_CHECKS=0
           fi
           
-          # For dev branch: require basic checks, for main: require comprehensive checks
+          # For dev branch: require secret detection + auto-pr, for main: require comprehensive checks
           if [ "$BASE_BRANCH" == "dev" ]; then
-            REQUIRED_CHECKS=1  # At least auto-pr check
+            REQUIRED_CHECKS=2  # secret-detection + auto-pr check
           else
-            REQUIRED_CHECKS=2  # More stringent for main
+            REQUIRED_CHECKS=3  # More stringent for main (secret-detection + comprehensive-testing + auto-pr)
           fi
           
           echo "📋 Required checks: $REQUIRED_CHECKS, Passed: $STATUS_CHECKS"
@@ -145,9 +187,52 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Quick secret check
+        id: secret-check
+        run: |
+          echo "🔍 Quick secret check..."
+          
+          # Check if the Quick Secret Scan status check actually passed
+          PR_NUMBER="${{ steps.pr-info.outputs.pr_number }}"
+          
+          if [ -n "$PR_NUMBER" ]; then
+            # Get status checks for this PR
+            SECRET_CHECK_STATUS=$(gh pr view $PR_NUMBER --json statusCheckRollup --jq '.statusCheckRollup[] | select(.name == "Quick Secret Scan") | .conclusion' 2>/dev/null || echo "")
+            
+            if [ "$SECRET_CHECK_STATUS" = "SUCCESS" ]; then
+              echo "secret_scan_passed=true" >> $GITHUB_OUTPUT
+              echo "✅ Secret detection passed"
+            elif [ "$SECRET_CHECK_STATUS" = "FAILURE" ]; then
+              echo "secret_scan_passed=false" >> $GITHUB_OUTPUT
+              echo "secret_scan_reason=Secret detection failed - potential secrets found" >> $GITHUB_OUTPUT
+              echo "❌ Secret detection failed"
+            elif [ -z "$SECRET_CHECK_STATUS" ]; then
+              # Fallback: if no secret check found, rely on branch protection
+              echo "secret_scan_passed=true" >> $GITHUB_OUTPUT
+              echo "⚠️ No secret check found - relying on branch protection"
+            else
+              echo "secret_scan_passed=false" >> $GITHUB_OUTPUT
+              echo "secret_scan_reason=Secret detection status: $SECRET_CHECK_STATUS" >> $GITHUB_OUTPUT
+              echo "⏳ Secret detection not yet complete: $SECRET_CHECK_STATUS"
+            fi
+          else
+            echo "secret_scan_passed=true" >> $GITHUB_OUTPUT
+            echo "⚠️ No PR found - skipping secret check"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Check merge conditions
         id: merge-check
         run: |
+          # Skip auto-merge for submodule-only changes
+          if [ "${{ steps.submodule-check.outputs.submodule_only }}" == "true" ]; then
+            echo "can_merge=false" >> $GITHUB_OUTPUT
+            echo "reason=Submodule-only changes handled by submodule-testing.yml" >> $GITHUB_OUTPUT
+            echo "🎯 Skipping auto-merge for submodule-only PR"
+            exit 0
+          fi
+          
           # Auto-merge PRs targeting dev branch (feature PRs)
           # Manual approval required for main branch (promotion PRs)
           if [ "${{ steps.pr-info.outputs.base_branch }}" == "dev" ]; then
@@ -185,7 +270,15 @@ jobs:
           BASE_BRANCH="${{ steps.pr-info.outputs.base_branch }}"
           
           if [ "$BASE_BRANCH" == "dev" ]; then
-            # Feature PRs: Auto-merge after approval + status checks
+            # Feature PRs: Auto-merge after secret detection + status checks
+            
+            # CRITICAL: Verify secret detection passed
+            if [ "${{ steps.secret-check.outputs.secret_scan_passed }}" != "true" ]; then
+              echo "can_merge=false" >> $GITHUB_OUTPUT
+              echo "reason=🔒 Secret detection required: ${{ steps.secret-check.outputs.secret_scan_reason || 'Secret scanning must pass before merge' }}" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
             if [ "${{ steps.pr-info.outputs.status_checks_passed }}" -lt "${{ steps.pr-info.outputs.required_checks }}" ]; then
               echo "can_merge=false" >> $GITHUB_OUTPUT
               echo "reason=Not all required status checks passed" >> $GITHUB_OUTPUT
@@ -193,12 +286,20 @@ jobs:
             fi
             
             echo "can_merge=true" >> $GITHUB_OUTPUT
-            echo "All conditions met for feature PR auto-merge"
+            echo "✅ All conditions met for feature PR auto-merge (including secret detection)"
             
           elif [ "$BASE_BRANCH" == "main" ]; then
-            # Promotion PRs: Require manual approval, no auto-merge
+            # Promotion PRs: Require manual approval + secret detection, no auto-merge
+            
+            # CRITICAL: Still verify secret detection for main branch
+            if [ "${{ steps.secret-check.outputs.secret_scan_passed }}" != "true" ]; then
+              echo "can_merge=false" >> $GITHUB_OUTPUT
+              echo "reason=🔒 Secret detection failed for main branch: ${{ steps.secret-check.outputs.secret_scan_reason || 'Secret scanning must pass' }}" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
             echo "can_merge=false" >> $GITHUB_OUTPUT
-            echo "reason=Promotion PRs require manual merge for production safety" >> $GITHUB_OUTPUT
+            echo "reason=Promotion PRs require manual merge for production safety (secret detection passed)" >> $GITHUB_OUTPUT
             exit 0
           fi
 

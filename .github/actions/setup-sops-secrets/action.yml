@@ -1,0 +1,66 @@
+name: Setup SOPS Secrets
+description: Industry-standard SOPS secret decryption for GitHub Actions
+inputs:
+  sops-age-key:
+    required: true
+    description: Age private key for SOPS decryption
+  secrets-file:
+    required: false
+    default: infrastructure/apps/overlays/staging/mcp-secrets.sops.yaml
+    description: Path to SOPS encrypted secrets file
+  environment:
+    required: false
+    default: staging
+    description: Environment (staging, prod, dev)
+
+runs:
+  using: composite
+  steps:
+    - name: Install SOPS and decrypt secrets
+      shell: bash
+      run: |
+        # Install industry-standard tools
+        curl -LO https://github.com/getsops/sops/releases/latest/download/sops-v3.8.1.linux.amd64
+        curl -LO https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        sudo mv sops-v3.8.1.linux.amd64 /usr/local/bin/sops
+        sudo mv yq_linux_amd64 /usr/local/bin/yq
+        sudo chmod +x /usr/local/bin/sops /usr/local/bin/yq
+        
+        # Validate SOPS installation
+        sops --version
+        yq --version
+        
+        # Setup Age key file (secure approach)
+        echo "${{ inputs.sops-age-key }}" > age.key
+        chmod 600 age.key
+        
+        # Determine secrets file path based on environment
+        SECRETS_FILE="${{ inputs.secrets-file }}"
+        if [[ "${{ inputs.environment }}" != "staging" ]]; then
+          SECRETS_FILE="infrastructure/apps/overlays/${{ inputs.environment }}/mcp-secrets.sops.yaml"
+        fi
+        
+        # Decrypt and export secrets (validated pattern)
+        echo "🔓 Decrypting secrets from: $SECRETS_FILE"
+        SOPS_AGE_KEY_FILE=age.key sops -d "$SECRETS_FILE" | \
+          yq '.stringData | to_entries | .[] | .key + "=" + .value' >> $GITHUB_ENV
+        
+        # Security cleanup
+        rm age.key
+        
+        echo "✅ SOPS secrets decrypted using industry best practices"
+        echo "🔐 Secrets exported to environment variables securely"
+        
+    - name: Validate secret availability
+      shell: bash
+      run: |
+        # Validate that key environment variables are available (without exposing values)
+        for var in OPENAI_API_KEY PERPLEXITY_API_KEY GITHUB_PERSONAL_ACCESS_TOKEN; do
+          if [[ -z "${!var}" ]]; then
+            echo "❌ ERROR: $var not found in decrypted secrets"
+            exit 1
+          else
+            echo "✅ $var is available"
+          fi
+        done
+        echo "🎯 All required MCP secrets successfully decrypted and validated"

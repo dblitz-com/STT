@@ -38,3 +38,8 @@ spec:
     kind: GitRepository
     name: gengine-feature
   targetNamespace: staging
+  # Enable SOPS decryption
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

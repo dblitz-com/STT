@@ -8,6 +8,8 @@ on:
       - 'dependabot/**'
       - 'renovate/**'
       - 'update-flux-*'
+    paths-ignore:
+      - 'src/gengines/**'  # Exclude submodules - handled by submodule-testing.yml
 
 permissions:
   contents: write
