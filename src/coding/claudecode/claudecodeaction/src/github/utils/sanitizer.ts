@@ -10,26 +10,26 @@ export function stripInvisibleCharacters(content: string): string {
 }
 
 export function stripMarkdownImageAltText(content: string): string {
-  return content.replace(/!\[[^\]]{0,1000}\]\(/g, "![](");
+  return content.replace(/!\[[^\]]*\]\(/g, "![](");
 }
 
 export function stripMarkdownLinkTitles(content: string): string {
-  content = content.replace(/(\[[^\]]{0,1000}\]\([^)]{0,1000})\s+"[^"]{0,1000}"/g, "$1");
-  content = content.replace(/(\[[^\]]{0,1000}\]\([^)]{0,1000})\s+'[^']{0,1000}'/g, "$1");
+  content = content.replace(/(\[[^\]]*\]\([^)]+)\s+"[^"]*"/g, "$1");
+  content = content.replace(/(\[[^\]]*\]\([^)]+)\s+'[^']*'/g, "$1");
   return content;
 }
 
 export function stripHiddenAttributes(content: string): string {
-  content = content.replace(/\salt\s*=\s*["'][^"']{0,1000}["']/gi, "");
-  content = content.replace(/\salt\s*=\s*[^\s>]{1,100}/gi, "");
-  content = content.replace(/\stitle\s*=\s*["'][^"']{0,1000}["']/gi, "");
-  content = content.replace(/\stitle\s*=\s*[^\s>]{1,100}/gi, "");
-  content = content.replace(/\saria-label\s*=\s*["'][^"']{0,1000}["']/gi, "");
-  content = content.replace(/\saria-label\s*=\s*[^\s>]{1,100}/gi, "");
-  content = content.replace(/\sdata-[a-zA-Z0-9-]{1,50}\s*=\s*["'][^"']{0,1000}["']/gi, "");
-  content = content.replace(/\sdata-[a-zA-Z0-9-]{1,50}\s*=\s*[^\s>]{1,100}/gi, "");
-  content = content.replace(/\splaceholder\s*=\s*["'][^"']{0,1000}["']/gi, "");
-  content = content.replace(/\splaceholder\s*=\s*[^\s>]{1,100}/gi, "");
+  content = content.replace(/\salt\s*=\s*["'][^"']*["']/gi, "");
+  content = content.replace(/\salt\s*=\s*[^\s>]+/gi, "");
+  content = content.replace(/\stitle\s*=\s*["'][^"']*["']/gi, "");
+  content = content.replace(/\stitle\s*=\s*[^\s>]+/gi, "");
+  content = content.replace(/\saria-label\s*=\s*["'][^"']*["']/gi, "");
+  content = content.replace(/\saria-label\s*=\s*[^\s>]+/gi, "");
+  content = content.replace(/\sdata-[a-zA-Z0-9-]+\s*=\s*["'][^"']*["']/gi, "");
+  content = content.replace(/\sdata-[a-zA-Z0-9-]+\s*=\s*[^\s>]+/gi, "");
+  content = content.replace(/\splaceholder\s*=\s*["'][^"']*["']/gi, "");
+  content = content.replace(/\splaceholder\s*=\s*[^\s>]+/gi, "");
   return content;
 }
 
@@ -62,4 +62,4 @@ export function sanitizeContent(content: string): string {
 }
 
 export const stripHtmlComments = (content: string) =>
-  content.replace(/<!--[^]*?-->/g, "").replace(/<!--[^]*$/, "");
+  content.replace(/<!--[\s\S]*?-->/g, "");
