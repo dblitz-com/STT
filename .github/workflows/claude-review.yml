@@ -23,6 +23,7 @@ jobs:
       - name: Auto review GitOps PR
         uses: anthropics/claude-code-action@beta
         with:
+          auto_review: true
           direct_prompt: |
             Please review this PR with a focus on GitOps and FluxCD best practices. This is the gengine project which uses dynamic submodule GitOps provisioning.
 
