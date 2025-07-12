@@ -32,5 +32,7 @@
     <string>STT Dictate needs microphone access to transcribe your speech.</string>
     <key>NSInputMonitoringUsageDescription</key>
     <string>STT Dictate needs to monitor keyboard input to detect the Fn key for dictation toggle.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>STT Dictate needs accessibility access to insert transcribed text into any application.</string>
 </dict>
 </plist>

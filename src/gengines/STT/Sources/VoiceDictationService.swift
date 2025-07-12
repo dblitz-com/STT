@@ -126,22 +126,38 @@ class VoiceDictationService {
     }
     
     private func checkAccessibilityPermissions() {
-        // First check WITHOUT prompting
+        // Check Accessibility permission
         let accessEnabled = AXIsProcessTrusted()
         NSLog("🔐 Accessibility permissions check: \(accessEnabled ? "GRANTED" : "DENIED")")
         
+        // Check if running on macOS 14+ (Sonoma/Sequoia) - Input Monitoring also required
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        let needsInputMonitoring = osVersion.majorVersion >= 14
+        
         if !accessEnabled {
-            NSLog("⚠️  Accessibility permissions required for Fn key override.")
-            NSLog("Please enable Accessibility for 'STT Dictate' in System Settings.")
-            NSLog("Go to: System Settings > Privacy & Security > Accessibility")
+            NSLog("❌ CRITICAL: Accessibility permissions DENIED")
+            NSLog("⚠️  This prevents AXUIElement text insertion - causing AXError: apiDisabled (-25211)")
+            NSLog("")
+            NSLog("🔧 REQUIRED FIXES:")
+            NSLog("1️⃣  Open System Settings > Privacy & Security > Accessibility")
+            NSLog("2️⃣  Find 'STT Dictate' in list and toggle ON")
+            NSLog("3️⃣  If not in list, click '+' and add: /Applications/STT Dictate.app")
+            
+            if needsInputMonitoring {
+                NSLog("4️⃣  ALSO enable Input Monitoring: System Settings > Privacy & Security > Input Monitoring")
+                NSLog("5️⃣  Find 'STT Dictate' and toggle ON")
+            }
+            
+            NSLog("")
+            NSLog("🚨 Without these permissions, text insertion falls back to slow CGEvent method")
             
             // Check if we've already prompted before
             let hasPromptedKey = "STTDictate.HasPromptedForAccessibility"
             let hasPrompted = UserDefaults.standard.bool(forKey: hasPromptedKey)
             
             if !hasPrompted {
-                // Only prompt once ever
-                NSLog("📋 First time run - showing accessibility prompt")
+                // Only prompt once ever - this opens System Settings
+                NSLog("📋 First time run - opening System Settings for you...")
                 let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
                 _ = AXIsProcessTrustedWithOptions(options)
                 
@@ -149,7 +165,7 @@ class VoiceDictationService {
                 UserDefaults.standard.set(true, forKey: hasPromptedKey)
                 UserDefaults.standard.synchronize()
             } else {
-                NSLog("⚠️ Already prompted for accessibility - user needs to manually enable in Settings")
+                NSLog("⚠️ Already prompted - please manually enable permissions in System Settings")
             }
         } else {
             NSLog("✅ Accessibility permissions granted")
@@ -684,19 +700,57 @@ class VoiceDictationService {
     @MainActor
     private func insertText(_ text: String) async {
         NSLog("⌨️ Inserting text: '\(text)'")
-        NSLog("🆕 Using NEW AXUIElement text insertion method")
         
         let processedText = processCommands(text)
         NSLog("⌨️ Processed text: '\(processedText)'")
         
+        // Check accessibility permissions before attempting AXUIElement usage
+        if !AXIsProcessTrusted() {
+            NSLog("❌ ACCESSIBILITY DENIED - Skipping AXUIElement method")
+            NSLog("⚠️ Using fallback CGEvent method (slower but works)")
+            for char in processedText {
+                await insertCharacter(String(char))
+            }
+            return
+        }
+        
+        NSLog("🆕 ATTEMPTING AXUIElement text insertion method")
+        
         // Get system-wide accessibility element
+        NSLog("🔍 Creating system-wide AX element...")
         let systemWide = AXUIElementCreateSystemWide()
+        NSLog("✅ System-wide AX element created")
         
         var focusedElement: AnyObject?
+        NSLog("🔍 Getting focused UI element...")
         let error = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
         
+        NSLog("🔍 AXUIElementCopyAttributeValue result: \(error.rawValue)")
+        
         if error != .success {
-            NSLog("❌ Failed to get focused UI element: \(error.rawValue)")
+            NSLog("❌ Failed to get focused UI element: AXError(\(error.rawValue))")
+            
+            // Decode the AX error
+            switch error {
+            case .success: NSLog("   AXError: success")
+            case .failure: NSLog("   AXError: failure")
+            case .illegalArgument: NSLog("   AXError: illegalArgument")
+            case .invalidUIElement: NSLog("   AXError: invalidUIElement")
+            case .invalidUIElementObserver: NSLog("   AXError: invalidUIElementObserver")
+            case .cannotComplete: NSLog("   AXError: cannotComplete")
+            case .attributeUnsupported: NSLog("   AXError: attributeUnsupported")
+            case .actionUnsupported: NSLog("   AXError: actionUnsupported")
+            case .notificationUnsupported: NSLog("   AXError: notificationUnsupported")
+            case .notImplemented: NSLog("   AXError: notImplemented")
+            case .notificationAlreadyRegistered: NSLog("   AXError: notificationAlreadyRegistered")
+            case .notificationNotRegistered: NSLog("   AXError: notificationNotRegistered")
+            case .apiDisabled: NSLog("   AXError: apiDisabled")
+            case .noValue: NSLog("   AXError: noValue")
+            case .parameterizedAttributeUnsupported: NSLog("   AXError: parameterizedAttributeUnsupported")
+            case .notEnoughPrecision: NSLog("   AXError: notEnoughPrecision")
+            @unknown default: NSLog("   AXError: unknown(\(error.rawValue))")
+            }
+            
             NSLog("⚠️ FALLING BACK to CGEvent character-by-character method")
             // Fallback to original CGEvent method if needed
             for char in processedText {
