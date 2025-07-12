@@ -229,9 +229,13 @@ class VoiceDictationService {
     }
     
     private func checkAccessibilityPermissions() {
-        // Check Accessibility permission
+        // Force permission prompt to bypass caching bug - from Wispr Flow approach
+        let options: CFDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let _ = AXIsProcessTrustedWithOptions(options)
+        
+        // Check Accessibility permission (but don't rely on cached result)
         let accessEnabled = AXIsProcessTrusted()
-        NSLog("🔐 Accessibility permissions check: \(accessEnabled ? "GRANTED" : "DENIED")")
+        NSLog("🔐 Accessibility permissions check: \(accessEnabled ? "GRANTED" : "DENIED (may be cached)")")
         
         // Check if running on macOS 14+ (Sonoma/Sequoia) - Input Monitoring also required
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
@@ -808,133 +812,68 @@ class VoiceDictationService {
         let processedText = processCommands(text)
         NSLog("⌨️ Processed text: '\(processedText)'")
         
-        // Check accessibility permissions before attempting AXUIElement usage
-        if !AXIsProcessTrusted() {
-            NSLog("❌ ACCESSIBILITY DENIED - Skipping AXUIElement method")
-            NSLog("⚠️ Using fallback CGEvent method (slower but works)")
-            for char in processedText {
-                await insertCharacter(String(char))
-            }
-            return
-        }
-        
-        NSLog("🆕 ATTEMPTING AXUIElement text insertion method")
-        
-        // Get system-wide accessibility element
-        NSLog("🔍 Creating system-wide AX element...")
+        // Attempt fast AXUIElement insertion - bypasses AXIsProcessTrusted() caching bug
         let systemWide = AXUIElementCreateSystemWide()
-        NSLog("✅ System-wide AX element created")
-        
         var focusedElement: AnyObject?
-        NSLog("🔍 Getting focused UI element...")
-        let error = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        let copyError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
         
-        NSLog("🔍 AXUIElementCopyAttributeValue result: \(error.rawValue)")
-        
-        if error != .success {
-            NSLog("❌ Failed to get focused UI element: AXError(\(error.rawValue))")
+        if copyError == .success, let focused = focusedElement {
+            let focusedUI = focused as! AXUIElement
+            // Verify editable text element
+            var role: AnyObject?
+            AXUIElementCopyAttributeValue(focusedUI, kAXRoleAttribute as CFString, &role)
+            let isTextElement = (role as? String == kAXTextFieldRole || role as? String == kAXTextAreaRole)
             
-            // Decode the AX error
-            switch error {
-            case .success: NSLog("   AXError: success")
-            case .failure: NSLog("   AXError: failure")
-            case .illegalArgument: NSLog("   AXError: illegalArgument")
-            case .invalidUIElement: NSLog("   AXError: invalidUIElement")
-            case .invalidUIElementObserver: NSLog("   AXError: invalidUIElementObserver")
-            case .cannotComplete: NSLog("   AXError: cannotComplete")
-            case .attributeUnsupported: NSLog("   AXError: attributeUnsupported")
-            case .actionUnsupported: NSLog("   AXError: actionUnsupported")
-            case .notificationUnsupported: NSLog("   AXError: notificationUnsupported")
-            case .notImplemented: NSLog("   AXError: notImplemented")
-            case .notificationAlreadyRegistered: NSLog("   AXError: notificationAlreadyRegistered")
-            case .notificationNotRegistered: NSLog("   AXError: notificationNotRegistered")
-            case .apiDisabled: NSLog("   AXError: apiDisabled")
-            case .noValue: NSLog("   AXError: noValue")
-            case .parameterizedAttributeUnsupported: NSLog("   AXError: parameterizedAttributeUnsupported")
-            case .notEnoughPrecision: NSLog("   AXError: notEnoughPrecision")
-            @unknown default: NSLog("   AXError: unknown(\(error.rawValue))")
-            }
-            
-            NSLog("⚠️ FALLING BACK to CGEvent character-by-character method")
-            // Fallback to original CGEvent method if needed
-            for char in processedText {
-                await insertCharacter(String(char))
-            }
-            return
-        }
-        
-        guard let focused = focusedElement else {
-            NSLog("❌ No focused element found")
-            return
-        }
-        
-        let focusedUIElement = focused as! AXUIElement
-        
-        // Check if the element is a text field/area
-        var role: AnyObject?
-        AXUIElementCopyAttributeValue(focusedUIElement, kAXRoleAttribute as CFString, &role)
-        let roleString = role as? String ?? ""
-        NSLog("🔍 Focused element role: \(roleString)")
-        
-        // Try to insert regardless of role - some apps have custom roles
-        // We'll let it fail gracefully if not editable
-        
-        // Get current text value
-        var currentValue: AnyObject?
-        if AXUIElementCopyAttributeValue(focusedUIElement, kAXValueAttribute as CFString, &currentValue) == .success,
-           let currentText = currentValue as? String {
-            
-            // Get selected text range (cursor position if length == 0)
-            var rangeValue: AnyObject?
-            if AXUIElementCopyAttributeValue(focusedUIElement, kAXSelectedTextRangeAttribute as CFString, &rangeValue) == .success,
-               rangeValue != nil {
-                let axRange = rangeValue as! AXValue
-                if AXValueGetType(axRange) == .cfRange {
-                
-                var cfRange = CFRange()
-                AXValueGetValue(axRange, .cfRange, &cfRange)
-                
-                let insertLocation = cfRange.location
-                let selectionLength = cfRange.length
-                
-                // Build new text: prefix + inserted + suffix (replace selection if any)
-                let textLength = currentText.count
-                let safeInsertLocation = min(insertLocation, textLength)
-                let safeSuffixStart = min(safeInsertLocation + selectionLength, textLength)
-                
-                let prefix = String(currentText.prefix(safeInsertLocation))
-                let suffix = String(currentText.suffix(from: currentText.index(currentText.startIndex, offsetBy: safeSuffixStart)))
-                
-                let newText = prefix + processedText + suffix
-                
-                // Set new value
-                let setError = AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString)
-                if setError != .success {
-                    NSLog("❌ Failed to set new text value: \(setError.rawValue)")
-                    return
-                }
-                
-                // Update cursor position after insertion
-                let newCursorLocation = insertLocation + processedText.count
-                var newRange = CFRange(location: newCursorLocation, length: 0)
-                if let newAXRange = AXValueCreate(.cfRange, &newRange) {
-                    let rangeError = AXUIElementSetAttributeValue(focusedUIElement, kAXSelectedTextRangeAttribute as CFString, newAXRange)
-                    if rangeError != .success {
-                        NSLog("⚠️ Failed to set new cursor position: \(rangeError.rawValue)")
+            // Skip editable check as kAXEditableAttribute doesn't exist - try insertion anyway
+            if isTextElement {
+                // Get current value and range
+                var currentValue: AnyObject?
+                if AXUIElementCopyAttributeValue(focusedUI, kAXValueAttribute as CFString, &currentValue) == .success,
+                   let currentText = currentValue as? String {
+                    
+                    var rangeValue: AnyObject?
+                    if AXUIElementCopyAttributeValue(focusedUI, kAXSelectedTextRangeAttribute as CFString, &rangeValue) == .success,
+                       let axRange = rangeValue,
+                       CFGetTypeID(axRange) == AXValueGetTypeID(),
+                       AXValueGetType(axRange as! AXValue) == .cfRange {
+                        
+                        var cfRange = CFRange()
+                        AXValueGetValue(axRange as! AXValue, .cfRange, &cfRange)
+                        
+                        let insertLocation = cfRange.location
+                        let selectionLength = cfRange.length
+                        
+                        // Insert/replace
+                        let prefixEnd = currentText.index(currentText.startIndex, offsetBy: insertLocation)
+                        let suffixStart = currentText.index(prefixEnd, offsetBy: selectionLength)
+                        let prefix = String(currentText[..<prefixEnd])
+                        let suffix = String(currentText[suffixStart...])
+                        let newText = prefix + processedText + suffix
+                        
+                        if AXUIElementSetAttributeValue(focusedUI, kAXValueAttribute as CFString, newText as CFString) == .success {
+                            // Update cursor
+                            let newCursorLocation = insertLocation + processedText.count
+                            var newRange = CFRange(location: newCursorLocation, length: 0)
+                            if let newAXRange = AXValueCreate(.cfRange, &newRange) {
+                                AXUIElementSetAttributeValue(focusedUI, kAXSelectedTextRangeAttribute as CFString, newAXRange)
+                            }
+                            NSLog("✅ Fast AXUIElement insertion successful")
+                            return
+                        }
                     }
                 }
-                
-                NSLog("✅ Text inserted successfully at cursor position")
-                }
-            } else {
-                // Fallback: Append if range unavailable
-                let newText = currentText + processedText
-                AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString)
-                NSLog("✅ Text appended (cursor range unavailable)")
             }
+            NSLog("⚠️ AXUIElement failed - falling back to CGEvent")
         } else {
-            NSLog("❌ Failed to get current text value")
+            NSLog("❌ AXUIElement copy failed with error: \(copyError) - falling back")
         }
+        
+        // Fallback to slow CGEvent insertion
+        for char in processedText {
+            await insertCharacter(String(char))
+        }
+        
+        NSLog("✅ Text insertion completed (fallback used)")
     }
     
     @MainActor
@@ -943,7 +882,7 @@ class VoiceDictationService {
         
         // Create keyDown event
         if let keyDownEvent = createKeyEvent(for: char, keyDown: true) {
-            keyDownEvent.post(tap: .cgAnnotatedSessionEventTap)
+            keyDownEvent.post(tap: .cghidEventTap)
             NSLog("⬇️ KeyDown posted for '\(char)'")
             
             // Small delay between keyDown and keyUp
@@ -951,7 +890,7 @@ class VoiceDictationService {
             
             // Create keyUp event
             if let keyUpEvent = createKeyEvent(for: char, keyDown: false) {
-                keyUpEvent.post(tap: .cgAnnotatedSessionEventTap)
+                keyUpEvent.post(tap: .cghidEventTap)
                 NSLog("⬆️ KeyUp posted for '\(char)'")
             } else {
                 NSLog("❌ Failed to create keyUp event for '\(char)'")
