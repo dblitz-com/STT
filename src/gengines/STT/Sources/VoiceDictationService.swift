@@ -69,6 +69,7 @@ class VoiceDictationService {
     private func setupWhisperKit() {
         Task {
             do {
+                NSLog("📥 WHISPERKIT: Starting model loading...")
                 print("📥 Loading WhisperKit model...")
                 
                 // Use Application Support directory instead of Documents to avoid permission prompts
@@ -87,16 +88,19 @@ class VoiceDictationService {
                     attributes: nil
                 )
                 
+                NSLog("📁 WHISPERKIT: Using model directory: \(whisperKitFolder.path)")
                 print("📁 Using model directory: \(whisperKitFolder.path)")
                 
-                // Try to load the large-v3-turbo model with custom folder
+                // Try to load the large-v3-turbo model (let it download to default location first)
+                NSLog("🔄 WHISPERKIT: Initializing large-v3-turbo model...")
                 whisperKit = try await WhisperKit(
-                    model: "openai_whisper-large-v3-turbo",
-                    modelFolder: whisperKitFolder.path
+                    model: "openai_whisper-large-v3-turbo"
                 )
+                NSLog("✅ WHISPERKIT: Model loaded successfully!")
                 print("✅ WhisperKit loaded successfully")
                 print("🎯 Ready! Press Fn to start/stop dictation")
             } catch {
+                NSLog("❌ WHISPERKIT: Failed to load turbo model: \(error)")
                 print("❌ Failed to load turbo model: \(error)")
                 print("🔄 Falling back to default model...")
                 do {
@@ -109,11 +113,12 @@ class VoiceDictationService {
                     )
                     let whisperKitFolder = appSupportURL.appendingPathComponent("STTDictate/WhisperKit")
                     
-                    whisperKit = try await WhisperKit(
-                        modelFolder: whisperKitFolder.path
-                    )
+                    NSLog("🔄 WHISPERKIT: Trying fallback model...")
+                    whisperKit = try await WhisperKit()
+                    NSLog("✅ WHISPERKIT: Fallback model loaded successfully!")
                     print("✅ WhisperKit fallback loaded successfully")
                 } catch {
+                    NSLog("❌ WHISPERKIT: FAILED to load any model: \(error)")
                     print("❌ Failed to load any WhisperKit model: \(error)")
                 }
             }
@@ -314,6 +319,12 @@ class VoiceDictationService {
         } else {
             startRecording()
         }
+    }
+    
+    func isWhisperKitReady() -> Bool {
+        let ready = whisperKit != nil
+        NSLog("🔍 WhisperKit ready check: \(ready ? "READY" : "NOT READY")")
+        return ready
     }
     
     func startRecording() {

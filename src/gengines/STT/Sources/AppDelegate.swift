@@ -158,6 +158,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         testItem.target = self  // Critical: Set target explicitly
         menu.addItem(testItem)
         
+        let testWhisperItem = NSMenuItem(title: "Test WhisperKit", action: #selector(testWhisperKit), keyEquivalent: "")
+        testWhisperItem.target = self  // Critical: Set target explicitly
+        menu.addItem(testWhisperItem)
+        
         let simpleTest = NSMenuItem(title: "Test Menu (Flash Icon)", action: #selector(simpleTest), keyEquivalent: "")
         simpleTest.target = self  // Critical: Set target explicitly
         menu.addItem(simpleTest)
@@ -234,6 +238,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("❌ Microphone access restricted")
         @unknown default:
             NSLog("❌ Unknown microphone permission status")
+        }
+    }
+    
+    @objc func testWhisperKit() {
+        NSLog("🤖 Menu: Test WhisperKit clicked")
+        
+        if let dictationService = dictationService {
+            let isReady = dictationService.isWhisperKitReady()
+            if isReady {
+                NSLog("✅ WhisperKit is ready for transcription")
+                
+                // Flash the icon to green to show success
+                if let button = statusItem?.button {
+                    button.title = "✅"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        button.title = "⚡"
+                    }
+                }
+            } else {
+                NSLog("❌ WhisperKit is NOT ready - still loading or failed to load")
+                
+                // Flash the icon to red to show failure
+                if let button = statusItem?.button {
+                    button.title = "❌"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        button.title = "⚡"
+                    }
+                }
+            }
+        } else {
+            NSLog("❌ VoiceDictationService is nil")
         }
     }
     
