@@ -1,0 +1,20 @@
+# Xcode
+.build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# WhisperKit models
+WhisperKit/
+Models/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+*.err

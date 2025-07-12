@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Explicitly disable app sandbox for unrestricted system access -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    
+    <!-- Allow network access for potential future features -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Allow microphone access -->
+    <key>com.apple.security.device.microphone</key>
+    <true/>
+    
+    <!-- Allow accessibility features -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>
