@@ -25,7 +25,7 @@ class VoiceDictationService {
     private let modelName = "openai_whisper-large-v3-turbo"
     
     // Wispr Flow approach: Debug mode for testing
-    private let debugMode = true // Set to false for production
+    private let debugMode = false // Set to false for production
     
     init() {
         checkAccessibilityPermissions()
@@ -35,9 +35,10 @@ class VoiceDictationService {
     
     // NEW: Call this AFTER applicationDidFinishLaunching
     func initializeAfterLaunch() {
-        print("🚀 Initializing STT after app launch...")
+        NSLog("🚀 Initializing STT after app launch...")
         checkSystemSettings()
-        applyHidutilRemapping()
+        // Temporarily disable hidutil remapping - might be interfering
+        // applyHidutilRemapping()
         setupHotkey()
     }
     
@@ -90,13 +91,22 @@ class VoiceDictationService {
     private func checkAccessibilityPermissions() {
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         let accessEnabled = AXIsProcessTrustedWithOptions(options)
-        print("🔐 Accessibility permissions check: \(accessEnabled ? "GRANTED" : "DENIED")")
+        NSLog("🔐 Accessibility permissions check: \(accessEnabled ? "GRANTED" : "DENIED")")
+        
         if !accessEnabled {
-            print("⚠️  Accessibility permissions required for Fn key override.")
-            print("Please enable Accessibility for 'STT Dictate' in System Settings.")
-            print("Go to: System Settings > Privacy & Security > Accessibility")
+            NSLog("⚠️  Accessibility permissions required for Fn key override.")
+            NSLog("Please enable Accessibility for 'STT Dictate' in System Settings.")
+            NSLog("Go to: System Settings > Privacy & Security > Accessibility")
+            
+            // Show notification
+            DispatchQueue.main.async {
+                AppDelegate.shared?.showNotification(
+                    title: "Permission Required",
+                    message: "Please grant Accessibility permission to STT Dictate in System Settings"
+                )
+            }
         } else {
-            print("✅ Accessibility permissions granted")
+            NSLog("✅ Accessibility permissions granted")
         }
     }
     
@@ -125,10 +135,13 @@ class VoiceDictationService {
     }
     
     private func setupHotkey() {
-        print("⌨️ Setting up Fn key interceptor...")
+        NSLog("⌨️ Setting up Fn key interceptor...")
         
         // Check system settings
         checkSystemSettings()
+        
+        // Check if we have Input Monitoring permission
+        NSLog("🔐 Checking Input Monitoring permission...")
         
         // Monitor flagsChanged, keyDown, and keyUp events
         let eventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
@@ -138,6 +151,7 @@ class VoiceDictationService {
         
         // Wispr Flow approach: Use listen-only in debug mode for testing
         let tapOptions: CGEventTapOptions = debugMode ? .listenOnly : .defaultTap
+        NSLog("📋 Event tap options: \(tapOptions == .defaultTap ? "DEFAULT (intercept)" : "LISTEN ONLY")")
         
         eventTap = CGEvent.tapCreate(
             tap: .cghidEventTap,
@@ -152,7 +166,7 @@ class VoiceDictationService {
                 let service = Unmanaged<VoiceDictationService>.fromOpaque(userInfo).takeUnretainedValue()
                 
                 // Debug: Log all events to see what we're receiving
-                print("📥 Event received: type=\(type.rawValue) (\(type))")
+                NSLog("📥 Event received: type=\(type.rawValue) (\(type))")
                 
                 // Set timestamp for Sequoia compatibility (Wispr Flow approach)
                 if event.timestamp == 0 {
@@ -164,16 +178,21 @@ class VoiceDictationService {
                     let currentFlags = event.flags
                     let fnFlag = CGEventFlags.maskSecondaryFn
                     
-                    print("   Flags: current=\(currentFlags.rawValue), last=\(service.lastFlags.rawValue)")
-                    print("   Fn flag present: \(currentFlags.contains(fnFlag))")
+                    NSLog("   Flags: current=\(currentFlags.rawValue), last=\(service.lastFlags.rawValue)")
+                    NSLog("   Fn flag present: \(currentFlags.contains(fnFlag))")
                     
                     // Detect Fn press: Flag set now but not before
                     if currentFlags.contains(fnFlag) && !service.lastFlags.contains(fnFlag) {
-                        print("🔑 Fn key pressed (flagsChanged) - toggling dictation")
+                        NSLog("🔑 Fn key pressed (flagsChanged) - toggling dictation")
+                        
+                        // Show visual feedback immediately
+                        AppDelegate.shared?.showFnKeyPressed()
+                        
                         service.toggleRecording()
                         service.lastFlags = currentFlags
                         // Only consume event if not in debug mode
                         if !service.debugMode {
+                            NSLog("🚫 Consuming Fn event to prevent emoji picker")
                             return nil  // Consume event to prevent emoji picker
                         }
                     }
@@ -185,15 +204,16 @@ class VoiceDictationService {
                 // Handle keyDown events (backup for Fn key as regular key)
                 if type == .keyDown || type == .keyUp {
                     let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-                    print("   KeyCode: \(keyCode)")
+                    NSLog("   KeyCode: \(keyCode)")
                     
                     // Check for original Fn key (63) OR hidutil remapped key
                     // hidutil mapped Fn to key code 30064771327, but we need the actual virtual key code
                     if (keyCode == 63 || keyCode == 255) && type == .keyDown { // 255 is common for remapped keys
-                        print("🔑 Fn key pressed (keyDown) - toggling dictation")
+                        NSLog("🔑 Fn key pressed (keyDown) - toggling dictation")
                         service.toggleRecording()
                         // Only consume event if not in debug mode
                         if !service.debugMode {
+                            NSLog("🚫 Consuming Fn key event")
                             return nil  // Consume event to prevent emoji picker
                         }
                     }
@@ -205,24 +225,30 @@ class VoiceDictationService {
         )
         
         if let eventTap = eventTap {
+            NSLog("✅ Event tap created successfully")
+            
             let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
             // CRITICAL FIX: Use main run loop instead of current for app bundles
             CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
             CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .defaultMode)
+            NSLog("📍 Run loop sources added to common and default modes")
             
             // Enable the event tap
             CGEvent.tapEnable(tap: eventTap, enable: true)
             
             // Verify it's enabled
             let isEnabled = CGEvent.tapIsEnabled(tap: eventTap)
-            print("✅ Event tap created: enabled=\(isEnabled)")
-            print("🔍 Event mask: \(eventMask) (flagsChanged + keyDown + keyUp)")
-            print("📍 Run loop sources added to common and default modes")
-            print("🎯 Ready - Press Fn key to test (will show debug output)")
+            NSLog("✅ Event tap enabled: \(isEnabled)")
+            NSLog("🔍 Event mask: \(eventMask) (flagsChanged + keyDown + keyUp)")
+            NSLog("🎯 Ready - Press Fn key to test (will show debug output)")
             
             if !isEnabled {
-                print("⚠️  WARNING: Event tap created but not enabled!")
-                print("   This usually means insufficient permissions")
+                NSLog("⚠️ WARNING: Event tap is NOT enabled!")
+                NSLog("   You may need to grant Input Monitoring permission")
+                AppDelegate.shared?.showNotification(
+                    title: "Input Monitoring Required",
+                    message: "Please grant Input Monitoring permission to STT Dictate in System Settings"
+                )
             }
         } else {
             print("❌ Failed to create event tap")
@@ -253,8 +279,31 @@ class VoiceDictationService {
     func startRecording() {
         guard !isRecording else { return }
         
-        print("🎤 Starting recording...")
+        // Request microphone permission first
+        AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                if granted {
+                    NSLog("🎤 Microphone permission granted, starting recording...")
+                    self.actuallyStartRecording()
+                } else {
+                    NSLog("❌ Microphone permission denied")
+                    AppDelegate.shared?.showNotification(
+                        title: "Microphone Permission Denied",
+                        message: "Please grant microphone access in System Settings"
+                    )
+                }
+            }
+        }
+    }
+    
+    private func actuallyStartRecording() {
+        NSLog("🎤 Actually starting recording...")
         isRecording = true
+        
+        // Update visual feedback
+        AppDelegate.shared?.updateRecordingState(isRecording: true)
         bufferQueue.sync {
             audioBuffer.removeAll()
         }
@@ -284,8 +333,11 @@ class VoiceDictationService {
     func stopRecording() {
         guard isRecording else { return }
         
-        print("🛑 Stopping recording...")
+        NSLog("🛑 Stopping recording...")
         isRecording = false
+        
+        // Update visual feedback
+        AppDelegate.shared?.updateRecordingState(isRecording: false)
         
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
