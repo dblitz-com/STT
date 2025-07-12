@@ -121,8 +121,8 @@ class VoiceDictationService {
     }
     
     private func checkAccessibilityPermissions() {
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let accessEnabled = AXIsProcessTrustedWithOptions(options)
+        // First check WITHOUT prompting
+        let accessEnabled = AXIsProcessTrusted()
         NSLog("🔐 Accessibility permissions check: \(accessEnabled ? "GRANTED" : "DENIED")")
         
         if !accessEnabled {
@@ -130,8 +130,22 @@ class VoiceDictationService {
             NSLog("Please enable Accessibility for 'STT Dictate' in System Settings.")
             NSLog("Go to: System Settings > Privacy & Security > Accessibility")
             
-            // Log permission requirement (no popup)
-            NSLog("⚠️ Please grant Accessibility permission to STT Dictate in System Settings")
+            // Check if we've already prompted before
+            let hasPromptedKey = "STTDictate.HasPromptedForAccessibility"
+            let hasPrompted = UserDefaults.standard.bool(forKey: hasPromptedKey)
+            
+            if !hasPrompted {
+                // Only prompt once ever
+                NSLog("📋 First time run - showing accessibility prompt")
+                let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+                _ = AXIsProcessTrustedWithOptions(options)
+                
+                // Mark that we've prompted
+                UserDefaults.standard.set(true, forKey: hasPromptedKey)
+                UserDefaults.standard.synchronize()
+            } else {
+                NSLog("⚠️ Already prompted for accessibility - user needs to manually enable in Settings")
+            }
         } else {
             NSLog("✅ Accessibility permissions granted")
         }
@@ -317,19 +331,39 @@ class VoiceDictationService {
         
         NSLog("🎤 Starting recording process...")
         
-        // Request microphone permission first
-        AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
-            guard let self = self else { return }
+        // Check microphone permission status first
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        
+        switch micStatus {
+        case .authorized:
+            // Already have permission, start immediately
+            NSLog("🎤 Microphone permission already granted")
+            self.actuallyStartRecording()
             
-            DispatchQueue.main.async {
-                if granted {
-                    NSLog("🎤 Microphone permission granted, starting recording...")
-                    self.actuallyStartRecording()
-                } else {
-                    NSLog("❌ Microphone permission denied")
-                    NSLog("❌ Please grant microphone access in System Settings")
+        case .notDetermined:
+            // Need to request permission for the first time
+            NSLog("🎤 Requesting microphone permission...")
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                guard let self = self else { return }
+                
+                DispatchQueue.main.async {
+                    if granted {
+                        NSLog("🎤 Microphone permission granted, starting recording...")
+                        self.actuallyStartRecording()
+                    } else {
+                        NSLog("❌ Microphone permission denied")
+                        NSLog("❌ Please grant microphone access in System Settings")
+                    }
                 }
             }
+            
+        case .denied, .restricted:
+            // Permission denied or restricted
+            NSLog("❌ Microphone permission denied")
+            NSLog("❌ Please grant microphone access in System Settings > Privacy & Security > Microphone")
+            
+        @unknown default:
+            NSLog("❌ Unknown microphone permission status")
         }
     }
     

@@ -246,9 +246,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func testMicrophone() {
         NSLog("🎤 Menu: Test Microphone clicked")
         
-        // Silent microphone test - just log the result
-        AVCaptureDevice.requestAccess(for: .audio) { granted in
-            NSLog(granted ? "✅ Microphone permission granted" : "❌ Microphone permission denied")
+        // Check current permission status without prompting
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        
+        switch micStatus {
+        case .authorized:
+            NSLog("✅ Microphone permission already granted")
+        case .notDetermined:
+            NSLog("⚠️ Microphone permission not yet requested")
+            // Only request if not determined
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                NSLog(granted ? "✅ Microphone permission granted" : "❌ Microphone permission denied")
+            }
+        case .denied:
+            NSLog("❌ Microphone permission denied - enable in System Settings")
+        case .restricted:
+            NSLog("❌ Microphone access restricted")
+        @unknown default:
+            NSLog("❌ Unknown microphone permission status")
         }
     }
     
