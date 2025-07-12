@@ -5,6 +5,7 @@ import CoreGraphics
 import Carbon.HIToolbox
 import AppKit
 import ApplicationServices
+import IOKit.hid  // For low-level HID monitoring
 
 class VoiceDictationService {
     private var whisperKit: WhisperKit?
@@ -18,6 +19,11 @@ class VoiceDictationService {
     // Event tap for Fn key
     private var eventTap: CFMachPort?
     private var lastFlags: CGEventFlags = CGEventFlags()
+    
+    // IOKit HID monitoring for Fn key detection (bypasses Sequoia's event suppression)
+    private var hidManager: IOHIDManager?
+    private var lastModifiers: UInt32 = 0
+    private var eventMonitor: Any?  // NSEvent monitor fallback
     
     // Configuration
     private let sampleRate: Double = 16000
@@ -37,13 +43,16 @@ class VoiceDictationService {
     func initializeAfterLaunch() {
         NSLog("🚀 Initializing STT after app launch...")
         checkSystemSettings()
-        // Temporarily disable hidutil remapping - might be interfering
-        // applyHidutilRemapping()
-        setupHotkey()
+        // PERMANENTLY DISABLED hidutil remapping - causes system freeze in Sequoia
+        // hidutil is deprecated and unstable in macOS 15.x - using IOKit HID instead
+        setupHIDMonitor()  // Primary: IOKit low-level detection bypasses Sequoia suppression
+        setupNSEventMonitor()  // Fallback: NSEvent monitoring
+        setupHotkey()  // Backup: CGEventTap (for debugging)
     }
     
     private func applyHidutilRemapping() {
-        print("🔧 Applying hidutil Fn key remapping...")
+        NSLog("🔧 Applying hidutil Fn key remapping for Sequoia compatibility...")
+        NSLog("   Remapping Fn (0x700000065) → keyCode 255 (0x7000000FF)")
         
         let task = Process()
         task.launchPath = "/usr/bin/hidutil"
@@ -53,16 +62,110 @@ class VoiceDictationService {
             try task.run()
             task.waitUntilExit()
             if task.terminationStatus == 0 {
-                print("✅ hidutil remapping applied successfully")
+                NSLog("✅ hidutil remapping applied successfully")
+                NSLog("🔧 Fn key will now generate keyDown/keyUp events instead of flagsChanged")
+                NSLog("🎯 This bypasses Sequoia's modifier event filtering")
             } else {
-                print("⚠️ hidutil remapping may have failed")
+                NSLog("⚠️ hidutil remapping failed with status: \(task.terminationStatus)")
             }
         } catch {
-            print("❌ Failed to run hidutil: \(error)")
+            NSLog("❌ Failed to run hidutil: \(error)")
+        }
+    }
+    
+    private func setupHIDMonitor() {
+        NSLog("🔧 Setting up IOKit HID monitor for Fn key detection...")
+        
+        hidManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        guard let manager = hidManager else {
+            NSLog("❌ Failed to create IOHIDManager")
+            return
+        }
+        
+        // Match keyboard devices (usage page and usage for keyboards)
+        let matchingDict: CFDictionary = [
+            kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop,
+            kIOHIDDeviceUsageKey: kHIDUsage_GD_Keyboard
+        ] as CFDictionary
+        IOHIDManagerSetDeviceMatching(manager, matchingDict)
+        
+        // Register callback for input value changes (keystrokes and modifiers)
+        IOHIDManagerRegisterInputValueCallback(manager, { context, result, sender, value in
+            guard let context = context else { return }
+            let service = Unmanaged<VoiceDictationService>.fromOpaque(context).takeUnretainedValue()
+            
+            let elem = IOHIDValueGetElement(value)
+            let usagePage = IOHIDElementGetUsagePage(elem)
+            let usage = IOHIDElementGetUsage(elem)
+            let modifierValue = IOHIDValueGetIntegerValue(value)
+            
+            // Log all for debugging to find exact Fn usage (run once, note Fn's usage)
+            NSLog("📥 HID event: usagePage=\(usagePage), usage=\(usage), value=\(modifierValue)")
+            
+            // Detect Fn: On Apple keyboards, Fn is often usage 0xFF (or kHIDUsage_KbdFN ~101 decimal) in keyboard page
+            // Adjust based on your logs: Press Fn and look for unique usage (e.g., 101 or bit shift)
+            if usagePage == kHIDPage_KeyboardOrKeypad && (usage == 101 || usage == 0xFF || usage == 255) {  // Common Fn usages; confirm via logs
+                if modifierValue == 1 && (service.lastModifiers & (1 << usage)) == 0 {  // Press down (value 1) and not previously set
+                    NSLog("🔑 HID Fn key pressed - toggling dictation")
+                    
+                    // Show visual feedback immediately
+                    AppDelegate.shared?.showFnKeyPressed()
+                    
+                    service.toggleRecording()
+                }
+                // Update state to detect press/release
+                if modifierValue == 1 {
+                    service.lastModifiers |= (1 << usage)
+                } else {
+                    service.lastModifiers &= ~(1 << usage)
+                }
+            }
+        }, Unmanaged.passUnretained(self).toOpaque())
+        
+        // Schedule with main run loop
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        
+        // Open the manager (requires Input Monitoring permission, already granted)
+        let openResult = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        if openResult != kIOReturnSuccess {
+            NSLog("❌ HID open failed: \(openResult) - Check Input Monitoring permission")
+        } else {
+            NSLog("✅ HID monitor setup successful - monitoring for Fn key events")
+        }
+    }
+    
+    private func setupNSEventMonitor() {
+        NSLog("🔧 Setting up NSEvent monitor as fallback for Fn key detection...")
+        
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
+            if event.modifierFlags.contains(.function) {
+                NSLog("🔑 NSEvent Fn key pressed - toggling dictation")
+                
+                // Show visual feedback immediately
+                AppDelegate.shared?.showFnKeyPressed()
+                
+                self.toggleRecording()
+            }
+        }
+        
+        if eventMonitor != nil {
+            NSLog("✅ NSEvent monitor setup successful")
+        } else {
+            NSLog("❌ Failed to setup NSEvent monitor")
         }
     }
     
     deinit {
+        // Clean up HID manager
+        if let manager = hidManager {
+            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+        
+        // Clean up NSEvent monitor
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        
         disableFnTap()
     }
     
@@ -211,9 +314,10 @@ class VoiceDictationService {
         // Create callback that captures self
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         
-        // Wispr Flow approach: Use listen-only in debug mode for testing
-        let tapOptions: CGEventTapOptions = debugMode ? .listenOnly : .defaultTap
-        NSLog("📋 Event tap options: \(tapOptions == .defaultTap ? "DEFAULT (intercept)" : "LISTEN ONLY")")
+        // TARGETED APPROACH: Use default tap but ONLY consume Fn events
+        // Safe because we're not using hidutil remapping anymore
+        let tapOptions: CGEventTapOptions = .defaultTap
+        NSLog("📋 Event tap options: DEFAULT (consume Fn events only)")
         
         eventTap = CGEvent.tapCreate(
             tap: .cghidEventTap,
@@ -235,7 +339,7 @@ class VoiceDictationService {
                     event.timestamp = CGEventTimestamp(mach_absolute_time())
                 }
                 
-                // Handle flagsChanged events (modifier keys like Fn)
+                // Handle flagsChanged events (SAFE method for Fn modifier detection)
                 if type == .flagsChanged {
                     let currentFlags = event.flags
                     let fnFlag = CGEventFlags.maskSecondaryFn
@@ -252,35 +356,17 @@ class VoiceDictationService {
                         
                         service.toggleRecording()
                         service.lastFlags = currentFlags
-                        // Only consume event if not in debug mode
-                        if !service.debugMode {
-                            NSLog("🚫 Consuming Fn event to prevent emoji picker")
-                            return nil  // Consume event to prevent emoji picker
-                        }
+                        
+                        // CONSUME Fn event to prevent emoji picker
+                        NSLog("🚫 Consuming Fn event to prevent emoji picker")
+                        return nil
                     }
                     
-                    // Update state on release or other changes
+                    // Update state for next comparison
                     service.lastFlags = currentFlags
                 }
                 
-                // Handle keyDown events (backup for Fn key as regular key)
-                if type == .keyDown || type == .keyUp {
-                    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-                    NSLog("   KeyCode: \(keyCode)")
-                    
-                    // Check for original Fn key (63) OR hidutil remapped key
-                    // hidutil mapped Fn to key code 30064771327, but we need the actual virtual key code
-                    if (keyCode == 63 || keyCode == 255) && type == .keyDown { // 255 is common for remapped keys
-                        NSLog("🔑 Fn key pressed (keyDown) - toggling dictation")
-                        service.toggleRecording()
-                        // Only consume event if not in debug mode
-                        if !service.debugMode {
-                            NSLog("🚫 Consuming Fn key event")
-                            return nil  // Consume event to prevent emoji picker
-                        }
-                    }
-                }
-                
+                // Pass through all non-Fn events (only consume Fn to prevent emoji)
                 return Unmanaged.passRetained(event)
             },
             userInfo: selfPtr
@@ -637,14 +723,32 @@ class VoiceDictationService {
             return 
         }
         
-        // Normalize audio to [-1.0, 1.0] range
+        // Check if audio is too quiet before processing
         if let maxAbs = chunk.max(by: { abs($0) < abs($1) }) {
             let maxValue = abs(maxAbs)
-            if maxValue > 0 && maxValue < 1.0 { // Only normalize if needed and non-zero
-                chunk = chunk.map { $0 / maxValue }
-                NSLog("🔊 Normalized audio (original max abs: \(maxValue))")
+            NSLog("🔊 Audio level check: max amplitude = \(maxValue)")
+            
+            // Apply amplification if audio is very quiet (but not silent)
+            if maxValue > 0.001 && maxValue < 0.1 {
+                let amplificationFactor: Float = 5.0  // Boost quiet audio
+                chunk = chunk.map { $0 * amplificationFactor }
+                let newMaxValue = abs(chunk.max(by: { abs($0) < abs($1) }) ?? 0)
+                NSLog("🔊 Applied \(amplificationFactor)x amplification: \(maxValue) → \(newMaxValue)")
+            }
+            
+            // Check for minimum volume threshold
+            let finalMaxValue = abs(chunk.max(by: { abs($0) < abs($1) }) ?? 0)
+            if finalMaxValue < 0.01 {
+                NSLog("⚠️ Audio too quiet (max: \(finalMaxValue)) - may not transcribe well")
+                NSLog("💡 Try speaking louder or check microphone settings")
+            }
+            
+            // Normalize audio to [-1.0, 1.0] range
+            if finalMaxValue > 0 && finalMaxValue < 1.0 {
+                chunk = chunk.map { $0 / finalMaxValue }
+                NSLog("🔊 Normalized audio (final max abs: \(finalMaxValue))")
             } else {
-                NSLog("🔊 Audio already normalized or silent (max abs: \(maxValue))")
+                NSLog("🔊 Audio already normalized or silent (max abs: \(finalMaxValue))")
             }
         }
         
