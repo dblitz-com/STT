@@ -70,16 +70,48 @@ class VoiceDictationService {
         Task {
             do {
                 print("📥 Loading WhisperKit model...")
-                // Try to load the large-v3-turbo model directly
-                whisperKit = try await WhisperKit(model: "openai_whisper-large-v3-turbo")
+                
+                // Use Application Support directory instead of Documents to avoid permission prompts
+                let appSupportURL = try FileManager.default.url(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: true
+                )
+                
+                // Create WhisperKit subdirectory in Application Support
+                let whisperKitFolder = appSupportURL.appendingPathComponent("STTDictate/WhisperKit")
+                try FileManager.default.createDirectory(
+                    at: whisperKitFolder,
+                    withIntermediateDirectories: true,
+                    attributes: nil
+                )
+                
+                print("📁 Using model directory: \(whisperKitFolder.path)")
+                
+                // Try to load the large-v3-turbo model with custom folder
+                whisperKit = try await WhisperKit(
+                    model: "openai_whisper-large-v3-turbo",
+                    modelFolder: whisperKitFolder.path
+                )
                 print("✅ WhisperKit loaded successfully")
                 print("🎯 Ready! Press Fn to start/stop dictation")
             } catch {
                 print("❌ Failed to load turbo model: \(error)")
                 print("🔄 Falling back to default model...")
                 do {
-                    // Fallback to default model
-                    whisperKit = try await WhisperKit()
+                    // Fallback to default model with Application Support
+                    let appSupportURL = try FileManager.default.url(
+                        for: .applicationSupportDirectory,
+                        in: .userDomainMask,
+                        appropriateFor: nil,
+                        create: true
+                    )
+                    let whisperKitFolder = appSupportURL.appendingPathComponent("STTDictate/WhisperKit")
+                    
+                    whisperKit = try await WhisperKit(
+                        modelFolder: whisperKitFolder.path
+                    )
                     print("✅ WhisperKit fallback loaded successfully")
                 } catch {
                     print("❌ Failed to load any WhisperKit model: \(error)")
@@ -574,21 +606,126 @@ class VoiceDictationService {
     @MainActor
     private func insertText(_ text: String) async {
         NSLog("⌨️ Inserting text: '\(text)'")
+        NSLog("🆕 Using NEW AXUIElement text insertion method")
         
-        // Process commands
         let processedText = processCommands(text)
         NSLog("⌨️ Processed text: '\(processedText)'")
         
-        // Insert text character by character
-        for char in processedText {
-            if let event = createKeyEvent(for: String(char)) {
-                event.post(tap: .cghidEventTap)
-                // Small delay to ensure proper key registration
-                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+        // Get system-wide accessibility element
+        let systemWide = AXUIElementCreateSystemWide()
+        
+        var focusedElement: AnyObject?
+        let error = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        
+        if error != .success {
+            NSLog("❌ Failed to get focused UI element: \(error.rawValue)")
+            NSLog("⚠️ FALLING BACK to CGEvent character-by-character method")
+            // Fallback to original CGEvent method if needed
+            for char in processedText {
+                await insertCharacter(String(char))
             }
+            return
         }
         
-        NSLog("✅ Text insertion completed")
+        guard let focused = focusedElement else {
+            NSLog("❌ No focused element found")
+            return
+        }
+        
+        let focusedUIElement = focused as! AXUIElement
+        
+        // Check if the element is a text field/area
+        var role: AnyObject?
+        AXUIElementCopyAttributeValue(focusedUIElement, kAXRoleAttribute as CFString, &role)
+        let roleString = role as? String ?? ""
+        NSLog("🔍 Focused element role: \(roleString)")
+        
+        // Try to insert regardless of role - some apps have custom roles
+        // We'll let it fail gracefully if not editable
+        
+        // Get current text value
+        var currentValue: AnyObject?
+        if AXUIElementCopyAttributeValue(focusedUIElement, kAXValueAttribute as CFString, &currentValue) == .success,
+           let currentText = currentValue as? String {
+            
+            // Get selected text range (cursor position if length == 0)
+            var rangeValue: AnyObject?
+            if AXUIElementCopyAttributeValue(focusedUIElement, kAXSelectedTextRangeAttribute as CFString, &rangeValue) == .success,
+               rangeValue != nil {
+                let axRange = rangeValue as! AXValue
+                if AXValueGetType(axRange) == .cfRange {
+                
+                var cfRange = CFRange()
+                AXValueGetValue(axRange, .cfRange, &cfRange)
+                
+                let insertLocation = cfRange.location
+                let selectionLength = cfRange.length
+                
+                // Build new text: prefix + inserted + suffix (replace selection if any)
+                let textLength = currentText.count
+                let safeInsertLocation = min(insertLocation, textLength)
+                let safeSuffixStart = min(safeInsertLocation + selectionLength, textLength)
+                
+                let prefix = String(currentText.prefix(safeInsertLocation))
+                let suffix = String(currentText.suffix(from: currentText.index(currentText.startIndex, offsetBy: safeSuffixStart)))
+                
+                let newText = prefix + processedText + suffix
+                
+                // Set new value
+                let setError = AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString)
+                if setError != .success {
+                    NSLog("❌ Failed to set new text value: \(setError.rawValue)")
+                    return
+                }
+                
+                // Update cursor position after insertion
+                let newCursorLocation = insertLocation + processedText.count
+                var newRange = CFRange(location: newCursorLocation, length: 0)
+                if let newAXRange = AXValueCreate(.cfRange, &newRange) {
+                    let rangeError = AXUIElementSetAttributeValue(focusedUIElement, kAXSelectedTextRangeAttribute as CFString, newAXRange)
+                    if rangeError != .success {
+                        NSLog("⚠️ Failed to set new cursor position: \(rangeError.rawValue)")
+                    }
+                }
+                
+                NSLog("✅ Text inserted successfully at cursor position")
+                }
+            } else {
+                // Fallback: Append if range unavailable
+                let newText = currentText + processedText
+                AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString)
+                NSLog("✅ Text appended (cursor range unavailable)")
+            }
+        } else {
+            NSLog("❌ Failed to get current text value")
+        }
+    }
+    
+    @MainActor
+    private func insertCharacter(_ char: String) async {
+        NSLog("🔢 OLD METHOD: Inserting character: '\(char)'")
+        
+        // Create keyDown event
+        if let keyDownEvent = createKeyEvent(for: char, keyDown: true) {
+            keyDownEvent.post(tap: .cgAnnotatedSessionEventTap)
+            NSLog("⬇️ KeyDown posted for '\(char)'")
+            
+            // Small delay between keyDown and keyUp
+            try? await Task.sleep(nanoseconds: 5_000_000) // 5ms
+            
+            // Create keyUp event
+            if let keyUpEvent = createKeyEvent(for: char, keyDown: false) {
+                keyUpEvent.post(tap: .cgAnnotatedSessionEventTap)
+                NSLog("⬆️ KeyUp posted for '\(char)'")
+            } else {
+                NSLog("❌ Failed to create keyUp event for '\(char)'")
+            }
+            
+            // Delay between characters
+            try? await Task.sleep(nanoseconds: 15_000_000) // 15ms
+        } else {
+            NSLog("❌ Failed to create keyDown event for '\(char)'")
+        }
     }
     
     private func processCommands(_ text: String) -> String {
@@ -621,16 +758,19 @@ class VoiceDictationService {
         return result
     }
     
-    private func createKeyEvent(for string: String) -> CGEvent? {
-        guard let source = CGEventSource(stateID: .combinedSessionState) else { return nil }
+    private func createKeyEvent(for string: String, keyDown: Bool) -> CGEvent? {
+        guard let source = CGEventSource(stateID: .hidSystemState) else { 
+            NSLog("❌ Failed to create CGEventSource")
+            return nil 
+        }
         
         // Handle special characters
         if string == "\n" {
-            return CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_Return), keyDown: true)
+            return CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_Return), keyDown: keyDown)
         }
         
         // For regular characters, use Unicode string
-        let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+        let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: keyDown)
         let utf16 = Array(string.utf16)
         event?.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
         
