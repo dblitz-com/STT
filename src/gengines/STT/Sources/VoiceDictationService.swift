@@ -21,7 +21,7 @@ class VoiceDictationService {
     
     // Configuration
     private let sampleRate: Double = 16000
-    private let chunkDuration: Double = 0.5 // 500ms chunks
+    private let chunkDuration: Double = 2.0 // 2.0s chunks for better context
     private let modelName = "openai_whisper-large-v3-turbo"
     
     // Wispr Flow approach: Debug mode for testing
@@ -70,20 +70,20 @@ class VoiceDictationService {
         Task {
             do {
                 print("📥 Loading WhisperKit model...")
-                // Try to load from local WhisperKit directory first
-                let modelPath = "WhisperKit/Models/whisperkit-coreml/\(modelName)"
-                if FileManager.default.fileExists(atPath: modelPath) {
-                    print("📁 Loading model from: \(modelPath)")
-                    whisperKit = try await WhisperKit(modelFolder: modelPath)
-                } else {
-                    // Fall back to default model loading
-                    print("📁 Loading default model")
-                    whisperKit = try await WhisperKit()
-                }
+                // Try to load the large-v3-turbo model directly
+                whisperKit = try await WhisperKit(model: "openai_whisper-large-v3-turbo")
                 print("✅ WhisperKit loaded successfully")
-                print("🎯 Ready! Press Cmd+Space to start/stop dictation")
+                print("🎯 Ready! Press Fn to start/stop dictation")
             } catch {
-                print("❌ Failed to load WhisperKit: \(error)")
+                print("❌ Failed to load turbo model: \(error)")
+                print("🔄 Falling back to default model...")
+                do {
+                    // Fallback to default model
+                    whisperKit = try await WhisperKit()
+                    print("✅ WhisperKit fallback loaded successfully")
+                } catch {
+                    print("❌ Failed to load any WhisperKit model: \(error)")
+                }
             }
         }
     }
@@ -98,13 +98,8 @@ class VoiceDictationService {
             NSLog("Please enable Accessibility for 'STT Dictate' in System Settings.")
             NSLog("Go to: System Settings > Privacy & Security > Accessibility")
             
-            // Show notification
-            DispatchQueue.main.async {
-                AppDelegate.shared?.showNotification(
-                    title: "Permission Required",
-                    message: "Please grant Accessibility permission to STT Dictate in System Settings"
-                )
-            }
+            // Log permission requirement (no popup)
+            NSLog("⚠️ Please grant Accessibility permission to STT Dictate in System Settings")
         } else {
             NSLog("✅ Accessibility permissions granted")
         }
@@ -245,10 +240,7 @@ class VoiceDictationService {
             if !isEnabled {
                 NSLog("⚠️ WARNING: Event tap is NOT enabled!")
                 NSLog("   You may need to grant Input Monitoring permission")
-                AppDelegate.shared?.showNotification(
-                    title: "Input Monitoring Required",
-                    message: "Please grant Input Monitoring permission to STT Dictate in System Settings"
-                )
+                NSLog("⚠️ Please grant Input Monitoring permission to STT Dictate in System Settings")
             }
         } else {
             print("❌ Failed to create event tap")
@@ -287,12 +279,7 @@ class VoiceDictationService {
         // Check if WhisperKit is ready
         guard whisperKit != nil else {
             NSLog("❌ WhisperKit not ready yet")
-            DispatchQueue.main.async {
-                AppDelegate.shared?.showNotification(
-                    title: "STT Not Ready",
-                    message: "WhisperKit is still loading. Please wait a moment and try again."
-                )
-            }
+            NSLog("⚠️ WhisperKit is still loading. Please wait a moment and try again.")
             return
         }
         
@@ -308,10 +295,7 @@ class VoiceDictationService {
                     self.actuallyStartRecording()
                 } else {
                     NSLog("❌ Microphone permission denied")
-                    AppDelegate.shared?.showNotification(
-                        title: "Microphone Permission Denied",
-                        message: "Please grant microphone access in System Settings"
-                    )
+                    NSLog("❌ Please grant microphone access in System Settings")
                 }
             }
         }
@@ -416,13 +400,7 @@ class VoiceDictationService {
             // Update visual feedback to show error
             AppDelegate.shared?.updateRecordingState(isRecording: false)
             
-            // Show notification
-            DispatchQueue.main.async {
-                AppDelegate.shared?.showNotification(
-                    title: "Recording Failed",
-                    message: "Failed to start audio recording: \(error.localizedDescription)"
-                )
-            }
+            NSLog("❌ Failed to start audio recording: \(error.localizedDescription)")
         }
     }
     
@@ -523,7 +501,7 @@ class VoiceDictationService {
     }
     
     private func processChunk() async {
-        let chunk = bufferQueue.sync {
+        var chunk = bufferQueue.sync {
             let data = audioBuffer
             audioBuffer.removeAll()
             return data
@@ -536,6 +514,17 @@ class VoiceDictationService {
             return 
         }
         
+        // Normalize audio to [-1.0, 1.0] range
+        if let maxAbs = chunk.max(by: { abs($0) < abs($1) }) {
+            let maxValue = abs(maxAbs)
+            if maxValue > 0 && maxValue < 1.0 { // Only normalize if needed and non-zero
+                chunk = chunk.map { $0 / maxValue }
+                NSLog("🔊 Normalized audio (original max abs: \(maxValue))")
+            } else {
+                NSLog("🔊 Audio already normalized or silent (max abs: \(maxValue))")
+            }
+        }
+        
         guard let whisperKit = whisperKit else { 
             NSLog("❌ WhisperKit is not ready")
             return 
@@ -544,23 +533,23 @@ class VoiceDictationService {
         NSLog("🎙️ Sending \(chunk.count) samples to WhisperKit for transcription...")
         
         do {
-            // Transcribe the audio chunk
+            // Transcribe with adjusted options
             let transcription = try await whisperKit.transcribe(
                 audioArray: chunk,
                 decodeOptions: DecodingOptions(
                     task: .transcribe,
                     language: "en",
                     usePrefillPrompt: false,
-                    skipSpecialTokens: true,
+                    skipSpecialTokens: false, // Allow special tokens for debugging
                     withoutTimestamps: true
                 )
             )
             
             NSLog("✅ WhisperKit transcription completed. Results: \(transcription.count)")
             
-            // Debug: Let's see what we actually got
+            // Debug: Full results
             for (index, result) in transcription.enumerated() {
-                NSLog("📋 Result \(index): text='\(result.text)', seekTime=\(result.seekTime)")
+                NSLog("📋 Result \(index): text='\(result.text)', seekTime=\(result.seekTime ?? 0.0)")
             }
             
             if let text = transcription.first?.text {

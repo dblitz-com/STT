@@ -239,50 +239,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func toggleDictation() {
         NSLog("🎯 Menu: Toggle Dictation clicked")
         
-        // Immediate visual feedback - flash the icon
-        if let button = statusItem?.button {
-            let originalTitle = button.title
-            button.title = "🔴"
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                button.title = originalTitle.isEmpty ? "⚡" : originalTitle
-            }
-        }
-        
-        // Show alert instead of notification
-        let alert = NSAlert()
-        alert.messageText = "Toggling Dictation"
-        alert.informativeText = "Manually toggling recording state"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-        
+        // Silent operation - just toggle recording without popups
         dictationService?.toggleRecording()
     }
     
     @objc func testMicrophone() {
         NSLog("🎤 Menu: Test Microphone clicked")
         
-        // Flash icon for feedback
-        if let button = statusItem?.button {
-            button.title = "🎤"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                button.title = "⚡"
-            }
-        }
-        
-        // Show alert with mic status
+        // Silent microphone test - just log the result
         AVCaptureDevice.requestAccess(for: .audio) { granted in
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Microphone Status"
-                alert.informativeText = granted ? "✅ Microphone permission granted!" : "❌ Microphone permission denied\n\nPlease grant permission in System Settings"
-                alert.alertStyle = granted ? .informational : .warning
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-                
-                NSLog(granted ? "✅ Microphone permission granted" : "❌ Microphone permission denied")
-            }
+            NSLog(granted ? "✅ Microphone permission granted" : "❌ Microphone permission denied")
         }
     }
     
