@@ -89,9 +89,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Shared instance for visual feedback
     static var shared: AppDelegate?
     
+    private func isAnotherInstanceRunning() -> Bool {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.stt.dictate"
+        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+        
+        // If more than one instance with our bundle ID
+        if runningApps.count > 1 {
+            return true
+        }
+        
+        // Also check by process name as backup
+        let processName = ProcessInfo.processInfo.processName
+        let task = Process()
+        task.launchPath = "/bin/bash"
+        task.arguments = ["-c", "ps aux | grep -v grep | grep '\(processName)' | wc -l"]
+        
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0"
+            let count = Int(output) ?? 0
+            
+            // More than 1 means another instance is running
+            return count > 1
+        } catch {
+            NSLog("Error checking for other instances: \(error)")
+            return false
+        }
+    }
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSLog("🚀 === STT DICTATE APP DID FINISH LAUNCHING ===")
         print("🚀 === STT DICTATE APP DID FINISH LAUNCHING ===")
+        
+        // Check if another instance is already running
+        if isAnotherInstanceRunning() {
+            NSLog("⚠️ Another instance of STT Dictate is already running!")
+            
+            let alert = NSAlert()
+            alert.messageText = "STT Dictate Already Running"
+            alert.informativeText = "Another instance of STT Dictate is already running. This instance will quit."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            
+            NSApp.terminate(nil)
+            return
+        }
         
         // Set shared instance for visual feedback
         AppDelegate.shared = self

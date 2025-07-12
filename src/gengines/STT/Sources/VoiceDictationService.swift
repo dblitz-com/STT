@@ -386,14 +386,23 @@ class VoiceDictationService {
             NSLog("✅ Audio tap installed successfully")
             
             // Prepare and start the audio engine
+            NSLog("🔧 Preparing audio engine...")
             audioEngine.prepare()
             NSLog("✅ Audio engine prepared")
             
+            NSLog("🚀 Starting audio engine...")
             try audioEngine.start()
-            NSLog("✅ Audio engine started successfully")
+            NSLog("✅ Audio engine started successfully - isRunning: \(audioEngine.isRunning)")
             
+            NSLog("🎯 About to start transcription task...")
             startTranscriptionTask()
-            NSLog("✅ Recording started successfully")
+            NSLog("✅ Recording started successfully - transcription task created")
+            
+            // Test if audio tap is actually working
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                NSLog("📋 Audio engine status check: isRunning=\(self.audioEngine.isRunning), recording=\(self.isRecording)")
+                NSLog("📋 Current audio buffer size: \(self.audioBuffer.count) samples")
+            }
             
         } catch {
             NSLog("❌ Failed to start recording: \(error)")
@@ -481,7 +490,10 @@ class VoiceDictationService {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData else { return }
+        guard let channelData = buffer.floatChannelData else { 
+            NSLog("⚠️ No channel data in audio buffer")
+            return 
+        }
         
         let channelDataValue = channelData.pointee
         let channelDataValueArray = stride(
@@ -490,17 +502,23 @@ class VoiceDictationService {
             by: buffer.stride
         ).map { channelDataValue[$0] }
         
+        NSLog("🎤 Received audio buffer: \(buffer.frameLength) frames, \(channelDataValueArray.count) samples")
+        
         bufferQueue.sync {
             audioBuffer.append(contentsOf: channelDataValueArray)
+            NSLog("📊 Total audio buffer size: \(audioBuffer.count) samples")
         }
     }
     
     private func startTranscriptionTask() {
+        NSLog("🎯 Starting transcription task...")
         recognitionTask = Task {
             while isRecording {
+                NSLog("🔄 Processing audio chunk...")
                 await processChunk()
                 try? await Task.sleep(nanoseconds: UInt64(chunkDuration * 1_000_000_000))
             }
+            NSLog("🛑 Transcription task ended (isRecording: \(isRecording))")
         }
     }
     
@@ -511,7 +529,19 @@ class VoiceDictationService {
             return data
         }
         
-        guard !chunk.isEmpty, let whisperKit = whisperKit else { return }
+        NSLog("📊 Audio chunk size: \(chunk.count) samples")
+        
+        guard !chunk.isEmpty else { 
+            NSLog("⚠️ Audio chunk is empty - no audio data received")
+            return 
+        }
+        
+        guard let whisperKit = whisperKit else { 
+            NSLog("❌ WhisperKit is not ready")
+            return 
+        }
+        
+        NSLog("🎙️ Sending \(chunk.count) samples to WhisperKit for transcription...")
         
         do {
             // Transcribe the audio chunk
@@ -526,18 +556,39 @@ class VoiceDictationService {
                 )
             )
             
-            if let text = transcription.first?.text, !text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
-                await insertText(text)
+            NSLog("✅ WhisperKit transcription completed. Results: \(transcription.count)")
+            
+            // Debug: Let's see what we actually got
+            for (index, result) in transcription.enumerated() {
+                NSLog("📋 Result \(index): text='\(result.text)', seekTime=\(result.seekTime)")
+            }
+            
+            if let text = transcription.first?.text {
+                let trimmedText = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                NSLog("🔍 Raw text: '\(text)' (length: \(text.count))")
+                NSLog("🔍 Trimmed text: '\(trimmedText)' (length: \(trimmedText.count))")
+                
+                if !trimmedText.isEmpty {
+                    NSLog("📝 Transcribed text: '\(trimmedText)'")
+                    await insertText(trimmedText)
+                } else {
+                    NSLog("⚠️ Text is empty after trimming whitespace")
+                }
+            } else {
+                NSLog("❌ No text in first transcription result")
             }
         } catch {
-            print("Transcription error: \(error)")
+            NSLog("❌ Transcription error: \(error)")
         }
     }
     
     @MainActor
     private func insertText(_ text: String) async {
+        NSLog("⌨️ Inserting text: '\(text)'")
+        
         // Process commands
         let processedText = processCommands(text)
+        NSLog("⌨️ Processed text: '\(processedText)'")
         
         // Insert text character by character
         for char in processedText {
@@ -547,6 +598,8 @@ class VoiceDictationService {
                 try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
             }
         }
+        
+        NSLog("✅ Text insertion completed")
     }
     
     private func processCommands(_ text: String) -> String {
