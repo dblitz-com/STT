@@ -269,6 +269,8 @@ class VoiceDictationService {
     }
     
     func toggleRecording() {
+        NSLog("🎯 Toggle recording called (currently recording: \(isRecording))")
+        
         if isRecording {
             stopRecording()
         } else {
@@ -277,7 +279,24 @@ class VoiceDictationService {
     }
     
     func startRecording() {
-        guard !isRecording else { return }
+        guard !isRecording else { 
+            NSLog("⚠️ Already recording, ignoring start request")
+            return 
+        }
+        
+        // Check if WhisperKit is ready
+        guard whisperKit != nil else {
+            NSLog("❌ WhisperKit not ready yet")
+            DispatchQueue.main.async {
+                AppDelegate.shared?.showNotification(
+                    title: "STT Not Ready",
+                    message: "WhisperKit is still loading. Please wait a moment and try again."
+                )
+            }
+            return
+        }
+        
+        NSLog("🎤 Starting recording process...")
         
         // Request microphone permission first
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
@@ -300,38 +319,136 @@ class VoiceDictationService {
     
     private func actuallyStartRecording() {
         NSLog("🎤 Actually starting recording...")
-        isRecording = true
-        
-        // Update visual feedback
-        AppDelegate.shared?.updateRecordingState(isRecording: true)
-        bufferQueue.sync {
-            audioBuffer.removeAll()
-        }
-        
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-        
-        // Install tap on input node
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            self.processAudioBuffer(buffer)
-        }
         
         do {
+            // Double-check WhisperKit is ready
+            guard whisperKit != nil else {
+                NSLog("❌ WhisperKit became nil during recording start")
+                throw NSError(domain: "STTError", code: 1, userInfo: [NSLocalizedDescriptionKey: "WhisperKit not ready"])
+            }
+            
+            // Note: No AVAudioSession configuration needed on macOS - handled by AVAudioEngine
+            
+            isRecording = true
+            
+            // Update visual feedback
+            AppDelegate.shared?.updateRecordingState(isRecording: true)
+            bufferQueue.sync {
+                audioBuffer.removeAll()
+            }
+            
+            // Reset audio engine if needed
+            if audioEngine.isRunning {
+                audioEngine.stop()
+                NSLog("🔄 Stopped existing audio engine")
+            }
+            
+            // Reset the audio engine to clear any previous configuration
+            audioEngine.reset()
+            NSLog("🔄 Audio engine reset")
+            
+            let inputNode = audioEngine.inputNode
+            NSLog("📋 Input node format: \(inputNode.inputFormat(forBus: 0))")
+            
+            // Use the input node's native format instead of forcing our own
+            let inputFormat = inputNode.inputFormat(forBus: 0)
+            
+            // Create a compatible format for WhisperKit (16kHz, mono, float32)
+            let targetFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sampleRate,  // 16000 Hz for WhisperKit
+                channels: 1,
+                interleaved: false
+            )!
+            
+            // Remove any existing tap to prevent conflicts (safe even if none exists)
+            inputNode.removeTap(onBus: 0)
+            NSLog("🗑️ Removed any existing audio tap")
+            
+            // Install tap with input node's native format first
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+                guard let self = self else { return }
+                
+                // Convert to target format if needed
+                if inputFormat.sampleRate != self.sampleRate || inputFormat.channelCount != 1 {
+                    // Convert format asynchronously to avoid blocking the audio thread
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        if let convertedBuffer = self.convertAudioBuffer(buffer, from: inputFormat, to: targetFormat) {
+                            self.processAudioBuffer(convertedBuffer)
+                        }
+                    }
+                } else {
+                    // Direct processing if formats match
+                    self.processAudioBuffer(buffer)
+                }
+            }
+            
+            NSLog("✅ Audio tap installed successfully")
+            
+            // Prepare and start the audio engine
+            audioEngine.prepare()
+            NSLog("✅ Audio engine prepared")
+            
             try audioEngine.start()
+            NSLog("✅ Audio engine started successfully")
+            
             startTranscriptionTask()
+            NSLog("✅ Recording started successfully")
+            
         } catch {
-            print("Failed to start audio engine: \(error)")
-            stopRecording()
+            NSLog("❌ Failed to start recording: \(error)")
+            isRecording = false
+            
+            // Clean up on failure
+            if audioEngine.isRunning {
+                audioEngine.stop()
+            }
+            
+            // Update visual feedback to show error
+            AppDelegate.shared?.updateRecordingState(isRecording: false)
+            
+            // Show notification
+            DispatchQueue.main.async {
+                AppDelegate.shared?.showNotification(
+                    title: "Recording Failed",
+                    message: "Failed to start audio recording: \(error.localizedDescription)"
+                )
+            }
         }
     }
     
+    
+    private func convertAudioBuffer(_ buffer: AVAudioPCMBuffer, from inputFormat: AVAudioFormat, to outputFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
+        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+            NSLog("❌ Failed to create audio converter")
+            return nil
+        }
+        
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * outputFormat.sampleRate / inputFormat.sampleRate)
+        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
+            NSLog("❌ Failed to create converted buffer")
+            return nil
+        }
+        
+        var error: NSError?
+        let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        if status == .error || error != nil {
+            NSLog("❌ Audio conversion failed: \(error?.localizedDescription ?? "Unknown error")")
+            return nil
+        }
+        
+        return convertedBuffer
+    }
+    
     func stopRecording() {
-        guard isRecording else { return }
+        guard isRecording else { 
+            NSLog("⚠️ Not recording, ignoring stop request")
+            return 
+        }
         
         NSLog("🛑 Stopping recording...")
         isRecording = false
@@ -339,11 +456,28 @@ class VoiceDictationService {
         // Update visual feedback
         AppDelegate.shared?.updateRecordingState(isRecording: false)
         
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        // Stop audio engine safely and remove tap
+        if audioEngine.isRunning {
+            // Remove tap before stopping engine
+            audioEngine.inputNode.removeTap(onBus: 0)
+            NSLog("🗑️ Audio tap removed")
+            
+            audioEngine.stop()
+            NSLog("✅ Audio engine stopped")
+        } else {
+            // Even if engine not running, try to remove tap (safe operation)
+            audioEngine.inputNode.removeTap(onBus: 0)
+            NSLog("🗑️ Audio tap removed (engine not running)")
+        }
         
+        // Cancel recognition task
         recognitionTask?.cancel()
         recognitionTask = nil
+        NSLog("✅ Recognition task cancelled")
+        
+        // Note: No audio session deactivation needed on macOS - handled by AVAudioEngine
+        
+        NSLog("✅ Recording stopped successfully")
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
