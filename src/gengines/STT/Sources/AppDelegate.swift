@@ -93,34 +93,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let bundleId = Bundle.main.bundleIdentifier ?? "com.stt.dictate"
         let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
         
-        // If more than one instance with our bundle ID
-        if runningApps.count > 1 {
-            return true
-        }
+        NSLog("🔍 Bundle ID: \(bundleId)")
+        NSLog("🔍 Running apps with bundle ID: \(runningApps.count)")
         
-        // Also check by process name as backup
-        let processName = ProcessInfo.processInfo.processName
-        let task = Process()
-        task.launchPath = "/bin/bash"
-        task.arguments = ["-c", "ps aux | grep -v grep | grep '\(processName)' | wc -l"]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0"
-            let count = Int(output) ?? 0
-            
-            // More than 1 means another instance is running
-            return count > 1
-        } catch {
-            NSLog("Error checking for other instances: \(error)")
-            return false
-        }
+        // Allow the app to run if there's only one instance (itself)
+        // Only block if there are genuinely 2+ instances
+        return runningApps.count > 1
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -129,15 +107,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Check if another instance is already running
         if isAnotherInstanceRunning() {
-            NSLog("⚠️ Another instance of STT Dictate is already running!")
-            
-            let alert = NSAlert()
-            alert.messageText = "STT Dictate Already Running"
-            alert.informativeText = "Another instance of STT Dictate is already running. This instance will quit."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            
+            NSLog("⚠️ Another instance of STT Dictate is already running - silently quitting")
             NSApp.terminate(nil)
             return
         }
