@@ -536,12 +536,22 @@ class VoiceDictationService {
             NSLog("🗑️ Audio tap removed (engine not running)")
         }
         
-        // Cancel recognition task
+        // Cancel recognition task (will interrupt sleep but not transcription)
         recognitionTask?.cancel()
         recognitionTask = nil
         NSLog("✅ Recognition task cancelled")
         
-        // Note: No audio session deactivation needed on macOS - handled by AVAudioEngine
+        // Process any remaining audio in buffer as final chunk
+        bufferQueue.sync {
+            if !audioBuffer.isEmpty {
+                Task {
+                    await processChunk()
+                    NSLog("✅ Final audio chunk processed")
+                }
+            } else {
+                NSLog("📊 No remaining audio in buffer for final processing")
+            }
+        }
         
         NSLog("✅ Recording stopped successfully")
     }
@@ -567,13 +577,31 @@ class VoiceDictationService {
         }
     }
     
+    private func nonCancellableAsync<T>(_ operation: @escaping () async throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            Task.detached {
+                do {
+                    let result = try await operation()
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+    
     private func startTranscriptionTask() {
         NSLog("🎯 Starting transcription task...")
         recognitionTask = Task {
             while isRecording {
                 NSLog("🔄 Processing audio chunk...")
                 await processChunk()
-                try? await Task.sleep(nanoseconds: UInt64(chunkDuration * 1_000_000_000))
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(chunkDuration * 1_000_000_000))
+                } catch {
+                    NSLog("🛑 Sleep interrupted by cancellation")
+                    break  // Exit loop immediately on cancellation
+                }
             }
             NSLog("🛑 Transcription task ended (isRecording: \(isRecording))")
         }
@@ -611,42 +639,45 @@ class VoiceDictationService {
         
         NSLog("🎙️ Sending \(chunk.count) samples to WhisperKit for transcription...")
         
+        let transcription: [TranscriptionResult]
         do {
-            // Transcribe with adjusted options
-            let transcription = try await whisperKit.transcribe(
-                audioArray: chunk,
-                decodeOptions: DecodingOptions(
-                    task: .transcribe,
-                    language: "en",
-                    usePrefillPrompt: false,
-                    skipSpecialTokens: false, // Allow special tokens for debugging
-                    withoutTimestamps: true
+            transcription = try await nonCancellableAsync {
+                try await whisperKit.transcribe(
+                    audioArray: chunk,
+                    decodeOptions: DecodingOptions(
+                        task: .transcribe,
+                        language: "en",
+                        usePrefillPrompt: false,
+                        skipSpecialTokens: false, // Allow special tokens for debugging
+                        withoutTimestamps: true
+                    )
                 )
-            )
-            
-            NSLog("✅ WhisperKit transcription completed. Results: \(transcription.count)")
-            
-            // Debug: Full results
-            for (index, result) in transcription.enumerated() {
-                NSLog("📋 Result \(index): text='\(result.text)', seekTime=\(result.seekTime ?? 0.0)")
-            }
-            
-            if let text = transcription.first?.text {
-                let trimmedText = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-                NSLog("🔍 Raw text: '\(text)' (length: \(text.count))")
-                NSLog("🔍 Trimmed text: '\(trimmedText)' (length: \(trimmedText.count))")
-                
-                if !trimmedText.isEmpty {
-                    NSLog("📝 Transcribed text: '\(trimmedText)'")
-                    await insertText(trimmedText)
-                } else {
-                    NSLog("⚠️ Text is empty after trimming whitespace")
-                }
-            } else {
-                NSLog("❌ No text in first transcription result")
             }
         } catch {
             NSLog("❌ Transcription error: \(error)")
+            return
+        }
+        
+        NSLog("✅ WhisperKit transcription completed. Results: \(transcription.count)")
+        
+        // Debug: Full results
+        for (index, result) in transcription.enumerated() {
+            NSLog("📋 Result \(index): text='\(result.text)', seekTime=\(result.seekTime ?? 0.0)")
+        }
+        
+        if let text = transcription.first?.text {
+            let trimmedText = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            NSLog("🔍 Raw text: '\(text)' (length: \(text.count))")
+            NSLog("🔍 Trimmed text: '\(trimmedText)' (length: \(trimmedText.count))")
+            
+            if !trimmedText.isEmpty {
+                NSLog("📝 Transcribed text: '\(trimmedText)'")
+                await insertText(trimmedText)
+            } else {
+                NSLog("⚠️ Text is empty after trimming whitespace")
+            }
+        } else {
+            NSLog("❌ No text in first transcription result")
         }
     }
     
