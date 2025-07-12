@@ -338,7 +338,9 @@ class VoiceDictationService {
         case .authorized:
             // Already have permission, start immediately
             NSLog("🎤 Microphone permission already granted")
-            self.actuallyStartRecording()
+            DispatchQueue.main.async {
+                self.actuallyStartRecording()
+            }
             
         case .notDetermined:
             // Need to request permission for the first time
