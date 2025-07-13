@@ -53,6 +53,15 @@ else
     echo "⚠️ Python virtual environment not found"
 fi
 
+
+# Copy command processor script
+if [ -f "ai_command_processor.py" ]; then
+    cp ai_command_processor.py "$APP_DIR/Contents/Resources/"
+    echo "✅ Copied command processor script to app bundle"
+else
+    echo "⚠️ Command processor script not found"
+fi
+
 # Sign the app with entitlements (Wispr Flow approach - no sandbox)
 codesign --force --deep --sign - --entitlements STTDictate.entitlements "$APP_DIR"
 
