@@ -1515,10 +1515,48 @@ class VoiceDictationService {
             NSLog("⚠️ AXUIElement failed despite cached permissions - using CGEvent fallback")
         }
         
-        NSLog("⚠️ Using fallback CGEvent method (slower but works)")
-        for char in text {
-            await insertCharacter(String(char))
+        NSLog("⚠️ Using fallback paste method for instant insertion")
+        await pasteText(text)
+    }
+    
+    @MainActor
+    private func pasteText(_ text: String) async {
+        NSLog("📋 Using clipboard paste for instant text insertion")
+        
+        // Save current clipboard
+        let pasteboard = NSPasteboard.general
+        let oldClipboard = pasteboard.string(forType: .string)
+        
+        // Set text to clipboard
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        
+        // Simulate Cmd+V
+        let commandDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x37, keyDown: true)! // Command key
+        commandDown.flags = .maskCommand
+        commandDown.post(tap: .cghidEventTap)
+        
+        let vKey = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: true)! // V key
+        vKey.flags = .maskCommand
+        vKey.post(tap: .cghidEventTap)
+        
+        let vKeyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: false)!
+        vKeyUp.flags = .maskCommand
+        vKeyUp.post(tap: .cghidEventTap)
+        
+        let commandUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x37, keyDown: false)!
+        commandUp.post(tap: .cghidEventTap)
+        
+        // Small delay to ensure paste completes
+        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        
+        // Restore original clipboard
+        if let oldClipboard = oldClipboard {
+            pasteboard.clearContents()
+            pasteboard.setString(oldClipboard, forType: .string)
         }
+        
+        NSLog("✅ Clipboard paste completed - text should appear instantly")
     }
     
     @MainActor
