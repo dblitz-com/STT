@@ -1143,10 +1143,25 @@ class VoiceDictationService {
         NSLog("🤖 SESSION AI: Processing entire session buffer (\\(sessionBuffer.count) chars)")
         NSLog("🤖 SESSION AI: Raw text: '\\(sessionBuffer)'")
         
-        // Get current context for AI processing
+        // Phase 3: Detect current context for entire session
         let context = await contextManager.getCurrentContext()
+        NSLog("🎯 SESSION CONTEXT: \(context.appCategory ?? "unknown") - \(context.uiContext ?? "unknown")")
         
-        // Process entire session with AI
+        // Check if entire session is a command
+        let classification = await classifyText(sessionBuffer)
+        
+        if classification.isCommand {
+            NSLog("🎯 SESSION COMMAND: Detected entire session as command: \(classification.intent)")
+            await executeCommand(classification)
+            
+            // Clear session buffer after command execution
+            sessionBuffer = ""
+            sessionStartPosition = nil
+            NSLog("🧹 Session buffer cleared after command execution")
+            return
+        }
+        
+        // Process entire session with AI for text enhancement
         let enhancedSessionText = await enhanceTextWithAI(sessionBuffer, context: context)
         
         if enhancedSessionText != sessionBuffer {
@@ -1426,23 +1441,10 @@ class VoiceDictationService {
         }
     }
     
-    // Enhanced text processing pipeline
+    // 🔥 FIXED: Session-based text processing - NO AI during recording!
     private func processAndInsertText(_ rawText: String) async {
-        // Phase 3: Detect current context
-        currentContext = await contextManager.getCurrentContext()
-        NSLog("🎯 Context detected: \(currentContext?.appCategory ?? "unknown") - \(currentContext?.uiContext ?? "unknown")")
-        
-        // First, check if this is a command
-        let classification = await classifyText(rawText)
-        
-        if classification.isCommand {
-            NSLog("🎯 Detected command: \(classification.intent)")
-            await executeCommand(classification)
-            return // Don't insert command text
-        }
-        
-        // 🔥 NEW: Session-based approach - insert raw text immediately, save AI for end
-        NSLog("📝 Adding to session: '\(rawText)' (session-based AI will process at end)")
+        // Skip AI command classification during recording - save for session processing
+        NSLog("📝 RECORDING: Adding raw text to session (NO AI until end): '\(rawText)'")
         await insertRawTextToSession(rawText)
     }
     
