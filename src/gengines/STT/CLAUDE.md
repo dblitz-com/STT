@@ -9,55 +9,53 @@ Open-source voice-to-text system for Mac that intercepts the Fn key to toggle di
 - Insert transcribed text into any active application
 - Run as background service with minimal UI (menu bar icon)
 
-## 🔧 macOS Sequoia TCC Cache Bug (Development Issue)
+## 🚨 CRITICAL: macOS Sequoia TCC Cache Bug Fix (REQUIRED)
 
-### The Problem - Why This Affects Development But Not Production Apps
-**macOS Sequoia has a confirmed TCC (Transparency, Consent, and Control) caching bug** that specifically affects **development/self-signed apps**:
+### The Problem
+**macOS Sequoia has a confirmed TCC (Transparency, Consent, and Control) caching bug** that affects rebuilt/self-signed apps with `LSUIElement=true`. This causes:
 
 - `AXIsProcessTrusted()` returns `false` despite granted Accessibility permissions
-- Runtime cache tied to bundle ID gets confused by frequent rebuilding/re-signing
+- Runtime cache tied to bundle ID survives resets, reboots, and process kills
 - Text insertion fails completely - transcription works but text doesn't appear in apps
 - Falls back to slow character-by-character CGEvent typing instead of fast AXUIElement insertion
 
-### Why Production Apps Like Wispr Flow Don't Have This Issue
-✅ **Properly signed** with Apple Developer certificates  
-✅ **Stable bundle ID** that doesn't change between installs  
-✅ **Single installation** from trusted source  
-✅ **No frequent rebuilding** that confuses TCC cache  
+### The Solution (MANDATORY AFTER EACH BUILD)
+**Every time you build the app, you MUST run the definitive TCC cache fix:**
 
-### Our Development Environment Issues  
-❌ **Self-signed** during development (changes signature each build)  
-❌ **Frequent rebuilding** confuses macOS TCC cache  
-❌ **Bundle ID reuse** with different signatures triggers cache bug  
+```bash
+./definitive-tcc-cache-fix.sh
+```
 
-### Automatic Internal Handling (No External Scripts Required)
-The app now **automatically handles this internally**:
+This script performs the **only known working solution** for the Sequoia TCC cache bug:
 
-1. **Auto-Detection**: Detects TCC cache bug on startup
-2. **Auto-Reset**: Attempts automated TCC database reset and daemon reload  
-3. **Auto-Open Settings**: Opens System Settings → Accessibility automatically
-4. **User Notification**: Shows helpful notification with clear steps
-5. **Auto-Monitoring**: Monitors for permission restoration and shows success notification
+1. **Kill Processes**: Terminates all STT Dictate instances and system daemons
+2. **Reset TCC Database**: Clears cached permission denials for com.stt.dictate
+3. **Manual Removal**: Opens System Settings → Accessibility for manual app removal
+4. **Manual Re-Addition**: User manually re-adds `/Applications/STT Dictate.app` 
+5. **Fresh Registration**: Bypasses cache by registering bundle ID fresh
 
-### What You'll See
-**When Bug Detected:**
-- 🔧 Notification: "TCC Cache Fix Required"
-- 📱 System Settings opens automatically to Accessibility panel
-- 📋 Console shows simple removal/re-addition steps
+### Success Indicators
+After running the fix, you should see:
+- ✅ **Fast Text Insertion**: Text appears instantly (<50ms, no character-by-character typing)
+- ✅ **Log Shows**: `🆕 ATTEMPTING AXUIElement text insertion method`
+- ✅ **Log Shows**: `✅ Text inserted successfully at cursor position`
+- ✅ **No Bug Detection**: `✅ Accessibility granted` (no TCC cache bug detected)
 
-**After Manual Fix:**
-- ✅ Notification: "TCC Cache Fixed!"
-- 🎉 Fast AXUIElement text insertion restored
-- ⚡ Text appears instantly (<50ms)
+### Failure Indicators (Fix Required)
+If you see these, run `./definitive-tcc-cache-fix.sh`:
+- ❌ **Slow Typing**: Character-by-character text insertion
+- ❌ **Log Shows**: `🐛 DETECTED: macOS Sequoia TCC caching bug`
+- ❌ **Log Shows**: `⚠️ Using fallback CGEvent method`
+- ❌ **Log Shows**: `❌ ACCESSIBILITY DENIED (cached)`
 
-### Manual Steps (Only When App Detects Bug)
-When the app opens System Settings for you:
-1. **Remove** 'STT Dictate' from Accessibility list (uncheck + click [-])
-2. **Re-add** by clicking [+] and selecting `/Applications/STT Dictate.app`
-3. **Enable** the checkbox
-4. App automatically detects restoration and shows success notification
+### Automated Detection
+The app now automatically detects this bug on startup with enhanced logging:
+```swift
+// Sources/VoiceDictationService.swift:initializeAfterLaunch()
+checkAccessibilityPermissions() // Runs comprehensive TCC cache bug detection
+```
 
-**This is a well-documented macOS Sequoia system bug affecting pynput, Input Leap, and other accessibility apps during development - not a bug in our code.**
+**This TCC cache bug fix is documented as affecting pynput, Input Leap, and other accessibility apps on Sequoia. It's a known system issue, not our bug.**
 
 ## Technical Architecture
 - **Core Engine**: WhisperKit with large-v3-turbo model for speech recognition
@@ -142,8 +140,8 @@ hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x70
 ./build-app.sh                     # Build macOS app bundle
 mv "STT Dictate.app" /Applications/
 
-# 🔧 TCC cache bug is now handled automatically by the app
-# The app will detect TCC issues and guide you through the fix internally
+# 🚨 CRITICAL: Run TCC cache fix after EVERY build (Sequoia bug)
+./definitive-tcc-cache-fix.sh      # Fix macOS Sequoia TCC caching bug
 
 ./install-service.sh               # Install as background service (optional)
 ```
@@ -171,8 +169,8 @@ The app provides extensive logging for troubleshooting:
 - Real-time event detection
 
 ### Common Issues
-1. **Text doesn't appear in apps**: TCC cache bug → App will auto-detect and open System Settings for manual fix
-2. **Character-by-character typing**: TCC cache bug → App shows notification and guides through internal fix
+1. **Text doesn't appear in apps**: macOS Sequoia TCC cache bug → Run `./definitive-tcc-cache-fix.sh`
+2. **Character-by-character typing**: TCC cache bug causing AXUIElement failure → Run fix script
 3. **No events received**: Missing Input Monitoring permission
 4. **Emoji still appears**: System settings not properly disabled
 5. **App crashes**: Insufficient code signing or wrong location
