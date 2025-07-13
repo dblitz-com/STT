@@ -7,6 +7,7 @@ import AppKit
 import ApplicationServices
 import IOKit.hid  // For low-level HID monitoring
 import OSLog
+import Cocoa  // For NSWorkspace
 
 class VoiceDictationService {
     private var whisperKit: WhisperKit?
@@ -43,6 +44,10 @@ class VoiceDictationService {
     // NEW: Call this AFTER applicationDidFinishLaunching
     func initializeAfterLaunch() {
         NSLog("🚀 Initializing STT after app launch...")
+        
+        // CRITICAL: Check TCC permissions early to force cache refresh and detect bugs
+        checkAccessibilityPermissions()
+        
         checkSystemSettings()
         // PERMANENTLY DISABLED hidutil remapping - causes system freeze in Sequoia
         // hidutil is deprecated and unstable in macOS 15.x - using IOKit HID instead
@@ -230,54 +235,146 @@ class VoiceDictationService {
     }
     
     private func checkAccessibilityPermissions() {
-        // Force permission prompt to bypass caching bug - from Wispr Flow approach
+        NSLog("🔐 Starting comprehensive TCC cache bug detection and remediation...")
+        
+        // Force prompt to invalidate cache
         let options: CFDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        let _ = AXIsProcessTrustedWithOptions(options)
+        let trustedWithPrompt = AXIsProcessTrustedWithOptions(options)
+        NSLog("🔍 AXIsProcessTrustedWithOptions result: \(trustedWithPrompt)")
         
-        // Check Accessibility permission (but don't rely on cached result)
-        let accessEnabled = AXIsProcessTrusted()
-        NSLog("🔐 Accessibility permissions check: \(accessEnabled ? "GRANTED" : "DENIED (may be cached)")")
+        let trustedCached = AXIsProcessTrusted()
+        NSLog("🔍 AXIsProcessTrusted (cached) result: \(trustedCached)")
         
-        // Check if running on macOS 14+ (Sonoma/Sequoia) - Input Monitoring also required
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
-        let needsInputMonitoring = osVersion.majorVersion >= 14
-        
-        if !accessEnabled {
-            NSLog("❌ CRITICAL: Accessibility permissions DENIED")
-            NSLog("⚠️  This prevents AXUIElement text insertion - causing AXError: apiDisabled (-25211)")
-            NSLog("")
-            NSLog("🔧 REQUIRED FIXES:")
-            NSLog("1️⃣  Open System Settings > Privacy & Security > Accessibility")
-            NSLog("2️⃣  Find 'STT Dictate' in list and toggle ON")
-            NSLog("3️⃣  If not in list, click '+' and add: /Applications/STT Dictate.app")
-            
-            if needsInputMonitoring {
-                NSLog("4️⃣  ALSO enable Input Monitoring: System Settings > Privacy & Security > Input Monitoring")
-                NSLog("5️⃣  Find 'STT Dictate' and toggle ON")
-            }
-            
-            NSLog("")
-            NSLog("🚨 Without these permissions, text insertion falls back to slow CGEvent method")
-            
-            // Check if we've already prompted before
-            let hasPromptedKey = "STTDictate.HasPromptedForAccessibility"
-            let hasPrompted = UserDefaults.standard.bool(forKey: hasPromptedKey)
-            
-            if !hasPrompted {
-                // Only prompt once ever - this opens System Settings
-                NSLog("📋 First time run - opening System Settings for you...")
-                let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-                _ = AXIsProcessTrustedWithOptions(options)
-                
-                // Mark that we've prompted
-                UserDefaults.standard.set(true, forKey: hasPromptedKey)
-                UserDefaults.standard.synchronize()
-            } else {
-                NSLog("⚠️ Already prompted - please manually enable permissions in System Settings")
-            }
-        } else {
-            NSLog("✅ Accessibility permissions granted")
+        if trustedWithPrompt && !trustedCached {
+            NSLog("🐛 DETECTED: macOS Sequoia TCC caching bug")
+            handleTCCCacheBug()
+            return
         }
+        
+        if !trustedWithPrompt && !trustedCached {
+            NSLog("❌ Accessibility permissions completely denied")
+            showPermissionInstructions()
+            return
+        }
+        
+        if trustedCached {
+            NSLog("✅ Accessibility granted")
+            return
+        }
+        
+        // Edge case retry
+        let _ = AXIsProcessTrustedWithOptions(options)
+        let finalCheck = AXIsProcessTrusted()
+        NSLog("🔐 Final status after retry: \(finalCheck ? "GRANTED" : "DENIED")")
+        
+        if !finalCheck {
+            handleTCCCacheBug()
+        }
+    }
+    
+    private func handleTCCCacheBug() {
+        NSLog("🔧 HANDLING SEQUOIA TCC CACHE BUG - Known issue affecting rebuilt/self-signed apps")
+        NSLog("")
+        NSLog("📋 AUTOMATED REMEDIATION STEPS:")
+        NSLog("1. Attempting automated TCC reset...")
+        
+        // Step 1: Automated TCC reset
+        let resetResult = resetTCCDatabase()
+        if resetResult {
+            NSLog("✅ TCC database reset successful")
+        } else {
+            NSLog("⚠️ TCC database reset failed or not needed")
+        }
+        
+        // Step 2: Daemon reload
+        reloadSystemDaemons()
+        
+        // Step 3: Re-test after automated fixes
+        let retestResult = AXIsProcessTrusted()
+        if retestResult {
+            NSLog("🎉 AUTOMATED FIX SUCCESSFUL - TCC cache bug resolved!")
+            return
+        }
+        
+        // Step 4: Manual intervention required
+        NSLog("❌ Automated fixes insufficient - manual intervention required")
+        showTCCCacheBugInstructions()
+    }
+    
+    private func resetTCCDatabase() -> Bool {
+        let task = Process()
+        task.launchPath = "/usr/bin/tccutil"
+        task.arguments = ["reset", "Accessibility", "com.stt.dictate"]
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            return task.terminationStatus == 0
+        } catch {
+            NSLog("⚠️ Failed to execute tccutil reset: \(error)")
+            return false
+        }
+    }
+    
+    private func reloadSystemDaemons() {
+        NSLog("🔄 Reloading system preference and TCC daemons...")
+        
+        let daemons = ["cfprefsd", "tccd"]
+        for daemon in daemons {
+            let task = Process()
+            task.launchPath = "/usr/bin/killall"
+            task.arguments = [daemon]
+            
+            do {
+                try task.run()
+                task.waitUntilExit()
+                NSLog("✅ Reloaded \(daemon)")
+            } catch {
+                NSLog("⚠️ Failed to reload \(daemon): \(error)")
+            }
+        }
+        
+        // Give daemons time to restart
+        Thread.sleep(forTimeInterval: 2.0)
+    }
+    
+    private func showTCCCacheBugInstructions() {
+        NSLog("")
+        NSLog("🔧 MANUAL TCC CACHE BUG FIX REQUIRED (macOS Sequoia Known Issue)")
+        NSLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        NSLog("")
+        NSLog("📍 STEP 1: Open System Settings")
+        NSLog("   → System Settings > Privacy & Security > Accessibility")
+        NSLog("")
+        NSLog("📍 STEP 2: Remove STT Dictate")
+        NSLog("   → Find 'STT Dictate' in the list")
+        NSLog("   → UNCHECK the checkbox")
+        NSLog("   → Click the [-] button to REMOVE completely")
+        NSLog("   → Confirm any removal prompts")
+        NSLog("")
+        NSLog("📍 STEP 3: Re-add STT Dictate (Critical for cache clearing)")
+        NSLog("   → Click the [+] button")
+        NSLog("   → Drag '/Applications/STT Dictate.app' into the list")
+        NSLog("   → OR browse and select the app")
+        NSLog("   → CHECK the checkbox to enable")
+        NSLog("")
+        NSLog("📍 STEP 4: Restart STT Dictate")
+        NSLog("   → Quit this app completely")
+        NSLog("   → Launch from Applications folder")
+        NSLog("   → Should see '✅ Accessibility granted' in logs")
+        NSLog("")
+        NSLog("🎯 This will restore instant AXUIElement text insertion!")
+        NSLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    }
+    
+    private func showPermissionInstructions() {
+        NSLog("")
+        NSLog("🔧 ACCESSIBILITY PERMISSIONS REQUIRED")
+        NSLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        NSLog("📍 System Settings > Privacy & Security > Accessibility")
+        NSLog("📍 Add 'STT Dictate' and enable the checkbox")
+        NSLog("📍 Required for instant text insertion")
+        NSLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     }
     
     private func checkSystemSettings() {
@@ -808,166 +905,247 @@ class VoiceDictationService {
     
     @MainActor
     private func insertText(_ text: String) async {
-        let logger = Logger(subsystem: "com.stt.dictate", category: "accessibility")
+        NSLog("⌨️ Inserting text: '\(text)'")
         
         let processedText = processCommands(text)
-        NSLog("🔧 NEW COMPREHENSIVE insertText() called with: '\(processedText)'")
-        NSLog("⌨️ Inserting text: '\(processedText)'")
+        NSLog("⌨️ Processed text: '\(processedText)'")
         
-        guard !processedText.isEmpty else {
-            logger.info("No text to insert")
-            return
-        }
-
-        // Check if Accessibility is trusted
-        let isTrusted = AXIsProcessTrusted()
-        NSLog("🔐 AXIsProcessTrusted() = \(isTrusted)")
-        if !isTrusted {
-            logger.error("Accessibility API not trusted; prompt user to grant in System Settings")
-            NSLog("❌ Accessibility not trusted - falling back to clipboard")
-            fallbackToClipboard(processedText)
-            return
-        }
-
-        // Get frontmost app PID (safer than system-wide for focused element)
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              let pid = pid_t(exactly: frontApp.processIdentifier) else {
-            logger.error("No frontmost application found")
-            NSLog("❌ No frontmost application - falling back to clipboard")
-            fallbackToClipboard(processedText)
+        // Wispr Flow approach: Always attempt AXUIElement insertion first
+        // This bypasses the macOS Sequoia TCC cache bug where AXIsProcessTrusted() 
+        // returns false despite granted permissions
+        NSLog("🚀 ATTEMPTING AXUIElement insertion (bypassing TCC cache check)")
+        
+        if await attemptAXUIElementInsertion(processedText) {
+            NSLog("✅ AXUIElement insertion successful - bypassed TCC cache bug!")
             return
         }
         
-        NSLog("🔍 Frontmost app: \(frontApp.localizedName ?? "Unknown") (PID: \(frontApp.processIdentifier))")
-
-        let appElement = AXUIElementCreateApplication(pid)
-
-        // Force initialization: Read app role (workaround for hierarchy init issues)
-        var role: CFTypeRef?
-        let initError = AXUIElementCopyAttributeValue(appElement, kAXRoleAttribute as CFString, &role)
-        if initError != .success {
-            logger.debug("App role init failed: \(initError.rawValue) – continuing anyway")
-        } else if let roleStr = role as? String {
-            logger.debug("App role: \(roleStr)")
-            NSLog("🔍 App role: \(roleStr)")
+        // Traditional permission check for logging
+        let permissionGranted = AXIsProcessTrusted()
+        if !permissionGranted {
+            NSLog("❌ ACCESSIBILITY DENIED (cached) - AXUIElement failed, using CGEvent fallback")
+            NSLog("💡 TIP: If permissions are granted in Settings but this shows denied, restart the app")
+        } else {
+            NSLog("⚠️ AXUIElement failed despite cached permissions - using CGEvent fallback")
         }
-
-        // Retry loop for focused element (handle timing/messaging failures)
-        var focusedElement: AXUIElement?
-        for attempt in 1...3 {
-            var focused: CFTypeRef?
-            let error = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused)
-            if error == .success {
-                let elem = focused as! AXUIElement
-                focusedElement = elem
-                logger.info("Got focused element on attempt \(attempt)")
-                NSLog("✅ Got focused element on attempt \(attempt)")
-                break
-            } else {
-                logger.warning("Focused element copy failed on attempt \(attempt): \(error.rawValue)")
-                NSLog("⚠️ Attempt \(attempt) failed: error \(error.rawValue)")
-                if attempt < 3 {
-                    try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s delay
-                }
+        
+        NSLog("⚠️ Using fallback CGEvent method (slower but works)")
+        for char in processedText {
+            await insertCharacter(String(char))
+        }
+    }
+    
+    @MainActor
+    private func attemptAXUIElementInsertion(_ text: String) async -> Bool {
+        
+        NSLog("🆕 ATTEMPTING AXUIElement text insertion method")
+        
+        // Get system-wide accessibility element
+        NSLog("🔍 Creating system-wide AX element...")
+        let systemWide = AXUIElementCreateSystemWide()
+        NSLog("✅ System-wide AX element created")
+        
+        var focusedElement: AnyObject?
+        NSLog("🔍 Getting focused UI element...")
+        let error = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        
+        NSLog("🔍 AXUIElementCopyAttributeValue result: \(error.rawValue)")
+        
+        if error != .success {
+            NSLog("❌ Failed to get focused UI element: AXError(\(error.rawValue))")
+            
+            // Decode the AX error
+            switch error {
+            case .success: NSLog("   AXError: success")
+            case .failure: NSLog("   AXError: failure")
+            case .illegalArgument: NSLog("   AXError: illegalArgument")
+            case .invalidUIElement: NSLog("   AXError: invalidUIElement")
+            case .invalidUIElementObserver: NSLog("   AXError: invalidUIElementObserver")
+            case .cannotComplete: NSLog("   AXError: cannotComplete")
+            case .attributeUnsupported: NSLog("   AXError: attributeUnsupported")
+            case .actionUnsupported: NSLog("   AXError: actionUnsupported")
+            case .notificationUnsupported: NSLog("   AXError: notificationUnsupported")
+            case .notImplemented: NSLog("   AXError: notImplemented")
+            case .notificationAlreadyRegistered: NSLog("   AXError: notificationAlreadyRegistered")
+            case .notificationNotRegistered: NSLog("   AXError: notificationNotRegistered")
+            case .apiDisabled: NSLog("   AXError: apiDisabled")
+            case .noValue: NSLog("   AXError: noValue")
+            case .parameterizedAttributeUnsupported: NSLog("   AXError: parameterizedAttributeUnsupported")
+            case .notEnoughPrecision: NSLog("   AXError: notEnoughPrecision")
+            @unknown default: NSLog("   AXError: unknown(\(error.rawValue))")
             }
+            
+            NSLog("⚠️ AXUIElement failed - returning false for CGEvent fallback")
+            return false
         }
-
-        guard let startingElement = focusedElement else {
-            logger.error("Exhausted retries; no focused element")
-            NSLog("❌ Exhausted retries - falling back to clipboard")
-            fallbackToClipboard(processedText)
-            return
+        
+        guard let focused = focusedElement else {
+            NSLog("❌ No focused element found")
+            return false
         }
-
-        // Hierarchy traversal and insertion
-        var currentElement: AXUIElement? = startingElement
-        while let element = currentElement {
-            // Prioritize insertion at cursor via kAXSelectedTextAttribute
-            var isSettable: DarwinBoolean = false
-            var error = AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &isSettable)
-            if error == .success && isSettable.boolValue {
-                error = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, processedText as CFString)
-                if error == .success {
-                    logger.info("Inserted text at cursor using kAXSelectedTextAttribute")
-                    NSLog("✅ Direct insertion successful (kAXSelectedTextAttribute)")
-                    return
-                } else {
-                    logger.error("Failed to set kAXSelectedTextAttribute: \(error.rawValue)")
+        
+        let focusedUIElement = focused as! AXUIElement
+        
+        // Check if the element is a text field/area
+        var role: AnyObject?
+        AXUIElementCopyAttributeValue(focusedUIElement, kAXRoleAttribute as CFString, &role)
+        let roleString = role as? String ?? ""
+        NSLog("🔍 Focused element role: \(roleString)")
+        
+        // Try to insert regardless of role - some apps have custom roles
+        // We'll let it fail gracefully if not editable
+        
+        // Get current text value
+        var currentValue: AnyObject?
+        if AXUIElementCopyAttributeValue(focusedUIElement, kAXValueAttribute as CFString, &currentValue) == .success,
+           let currentText = currentValue as? String {
+            
+            // Get selected text range (cursor position if length == 0)
+            var rangeValue: AnyObject?
+            if AXUIElementCopyAttributeValue(focusedUIElement, kAXSelectedTextRangeAttribute as CFString, &rangeValue) == .success,
+               rangeValue != nil {
+                let axRange = rangeValue as! AXValue
+                if AXValueGetType(axRange) == .cfRange {
+                
+                var cfRange = CFRange()
+                AXValueGetValue(axRange, .cfRange, &cfRange)
+                
+                let insertLocation = cfRange.location
+                let selectionLength = cfRange.length
+                
+                // Build new text: prefix + inserted + suffix (replace selection if any)
+                let textLength = currentText.count
+                let safeInsertLocation = min(insertLocation, textLength)
+                let safeSuffixStart = min(safeInsertLocation + selectionLength, textLength)
+                
+                let prefix = String(currentText.prefix(safeInsertLocation))
+                let suffix = String(currentText.suffix(from: currentText.index(currentText.startIndex, offsetBy: safeSuffixStart)))
+                
+                let newText = prefix + text + suffix
+                
+                // Set new value
+                let setError = AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString)
+                if setError != .success {
+                    NSLog("❌ Failed to set new text value: \(setError.rawValue)")
+                    return false
                 }
-            } else if error != .success {
-                logger.debug("kAXSelectedTextAttribute not available or check failed: \(error.rawValue)")
-            }
-
-            // Fallback: Append to end via kAXValueAttribute
-            var isValueSettable: DarwinBoolean = false
-            error = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &isValueSettable)
-            if error == .success && isValueSettable.boolValue {
-                var value: CFTypeRef?
-                error = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
-                if error == .success, let currentText = value as? String {
-                    let newText = currentText + processedText
-                    error = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, newText as CFString)
-                    if error == .success {
-                        logger.info("Appended text using kAXValueAttribute")
-                        NSLog("✅ Direct insertion successful (kAXValueAttribute)")
-                        return
-                    } else {
-                        logger.error("Failed to set kAXValueAttribute: \(error.rawValue)")
+                
+                // Update cursor position after insertion
+                let newCursorLocation = insertLocation + text.count
+                var newRange = CFRange(location: newCursorLocation, length: 0)
+                if let newAXRange = AXValueCreate(.cfRange, &newRange) {
+                    let rangeError = AXUIElementSetAttributeValue(focusedUIElement, kAXSelectedTextRangeAttribute as CFString, newAXRange)
+                    if rangeError != .success {
+                        NSLog("⚠️ Failed to set new cursor position: \(rangeError.rawValue)")
                     }
-                } else {
-                    logger.debug("Failed to get current kAXValueAttribute: \(error.rawValue)")
                 }
-            } else if error != .success {
-                logger.debug("kAXValueAttribute not available or check failed: \(error.rawValue)")
+                
+                // Force UI refresh for quirky apps (e.g., Cursor)
+                NotificationCenter.default.post(name: NSNotification.Name("NSTextDidChangeNotification"), object: nil)
+                
+                NSLog("✅ Text inserted successfully at cursor position with UI refresh")
+                return true
+                }
+            } else {
+                // Fallback: Append if range unavailable
+                let newText = currentText + text
+                let setError = AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString)
+                if setError != .success {
+                    NSLog("❌ Failed to append text: \(setError.rawValue)")
+                    return false
+                }
+                NSLog("✅ Text appended (cursor range unavailable)")
+                return true
             }
-
-            // Traverse to parent
-            var parent: CFTypeRef?
-            error = AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parent)
-            if error != .success || parent == nil {
-                logger.debug("No parent element available: \(error.rawValue)")
-                break
-            }
-            currentElement = parent as! AXUIElement
-
-            // Stop at window/app level
-            var role: CFTypeRef?
-            AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-            if let roleStr = role as? String, [kAXWindowRole, kAXApplicationRole].contains(roleStr) {
-                logger.debug("Reached window/application level; stopping traversal")
-                break
-            }
+        } else {
+            NSLog("❌ Failed to get current text value")
+            return false
         }
-
-        logger.error("Exhausted hierarchy; no suitable element for direct insertion")
-        NSLog("⚠️ NEW CODE: Hierarchy exhausted - falling back to clipboard")
-        fallbackToClipboard(processedText)
+        
+        return false
     }
     
-    private func fallbackToClipboard(_ text: String) {
-        let logger = Logger(subsystem: "com.stt.dictate", category: "accessibility")
+    @MainActor
+    private func insertCharacter(_ char: String) async {
+        NSLog("🔢 OLD METHOD: Inserting character: '\(char)'")
         
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        
-        // Show notification to user
-        AppDelegate.shared?.showNotification(
-            title: "STT Dictate", 
-            message: "Text copied to clipboard: \"\(text)\". Press Cmd+V to paste."
-        )
-        
-        logger.info("Fell back to clipboard; user must paste manually")
-        NSLog("✅ Clipboard fallback completed - text ready to paste")
+        // Create keyDown event
+        if let keyDownEvent = createKeyEvent(for: char, keyDown: true) {
+            keyDownEvent.post(tap: .cgAnnotatedSessionEventTap)
+            NSLog("⬇️ KeyDown posted for '\(char)'")
+            
+            // Small delay between keyDown and keyUp
+            try? await Task.sleep(nanoseconds: 5_000_000) // 5ms
+            
+            // Create keyUp event
+            if let keyUpEvent = createKeyEvent(for: char, keyDown: false) {
+                keyUpEvent.post(tap: .cgAnnotatedSessionEventTap)
+                NSLog("⬆️ KeyUp posted for '\(char)'")
+            } else {
+                NSLog("❌ Failed to create keyUp event for '\(char)'")
+            }
+            
+            // Delay between characters
+            try? await Task.sleep(nanoseconds: 15_000_000) // 15ms
+        } else {
+            NSLog("❌ Failed to create keyDown event for '\(char)'")
+        }
     }
     
-    // DISABLED: This method caused system freezes due to CGEvent posting
-    // @MainActor
-    // private func insertCharacter(_ char: String) async {
-    //     NSLog("🚨 DANGEROUS METHOD: This causes system freezes - DO NOT USE")
-    //     // This method posted CGEvents using .cghidEventTap which blocks system event pipeline
-    //     // Replaced with safe clipboard insertion above
-    // }
+    // Helper function to get key codes for common characters
+    private func getKeyCode(for char: String) -> CGKeyCode? {
+        switch char {
+        case "a": return 0x00
+        case "s": return 0x01
+        case "d": return 0x02
+        case "f": return 0x03
+        case "h": return 0x04
+        case "g": return 0x05
+        case "z": return 0x06
+        case "x": return 0x07
+        case "c": return 0x08
+        case "v": return 0x09
+        case "b": return 0x0B
+        case "q": return 0x0C
+        case "w": return 0x0D
+        case "e": return 0x0E
+        case "r": return 0x0F
+        case "y": return 0x10
+        case "t": return 0x11
+        case "1": return 0x12
+        case "2": return 0x13
+        case "3": return 0x14
+        case "4": return 0x15
+        case "6": return 0x16
+        case "5": return 0x17
+        case "=": return 0x18
+        case "9": return 0x19
+        case "7": return 0x1A
+        case "-": return 0x1B
+        case "8": return 0x1C
+        case "0": return 0x1D
+        case "]": return 0x1E
+        case "o": return 0x1F
+        case "u": return 0x20
+        case "[": return 0x21
+        case "i": return 0x22
+        case "p": return 0x23
+        case "l": return 0x25
+        case "j": return 0x26
+        case "'": return 0x27
+        case "k": return 0x28
+        case ";": return 0x29
+        case "\\": return 0x2A
+        case ",": return 0x2B
+        case "/": return 0x2C
+        case "n": return 0x2D
+        case "m": return 0x2E
+        case ".": return 0x2F
+        case " ": return 0x31  // Space
+        case "\n": return 0x24 // Return
+        default: return nil
+        }
+    }
     
     private func processCommands(_ text: String) -> String {
         var result = text
