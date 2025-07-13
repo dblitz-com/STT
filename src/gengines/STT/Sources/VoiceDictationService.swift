@@ -39,7 +39,34 @@ class VoiceDictationService {
     private var dictationBeginSound: NSSound?
     private var dictationConfirmSound: NSSound?
     
+    // AI editing
+    private var textBuffer: String = ""
+    private var lastInsertedText: String = ""
+    private let aiEditingEnabled = true // Toggle AI enhancement
+    private let pythonPath: String
+    private let aiEditorScriptPath: String
+    
     init() {
+        // Initialize AI editor paths
+        let currentDir = FileManager.default.currentDirectoryPath
+        
+        // Try to use bundled venv first, fallback to development paths
+        if let resourcePath = Bundle.main.resourcePath,
+           FileManager.default.fileExists(atPath: resourcePath + "/venv/bin/python") {
+            self.pythonPath = resourcePath + "/venv/bin/python"
+        } else {
+            self.pythonPath = currentDir + "/venv/bin/python"
+        }
+        
+        if let scriptPath = Bundle.main.path(forResource: "ai_editor", ofType: "py") {
+            self.aiEditorScriptPath = scriptPath
+        } else {
+            // Fallback to current directory for development
+            self.aiEditorScriptPath = currentDir + "/ai_editor.py"
+        }
+        
+        NSLog("🤖 AI Editor initialized: python=\(pythonPath), script=\(aiEditorScriptPath)")
+        
         checkAccessibilityPermissions()
         setupWhisperKit()
         setupDictationSounds()
@@ -264,6 +291,140 @@ class VoiceDictationService {
         } else {
             NSLog("❌ Could not find app bundle resource path")
         }
+    }
+    
+    // MARK: - AI Editing
+    
+    private func callAIEditor(_ rawText: String) async -> String {
+        // Call Python AI editor script to enhance raw transcription.
+        // Returns enhanced text or original text on failure.
+        guard aiEditingEnabled && !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return rawText
+        }
+        
+        return await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            process.arguments = [aiEditorScriptPath, rawText]
+            
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+            
+            // Set timeout
+            let timeoutTask = Task {
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second timeout
+                if process.isRunning {
+                    NSLog("⚠️ AI editor timeout, terminating process")
+                    process.terminate()
+                }
+            }
+            
+            process.terminationHandler = { _ in
+                timeoutTask.cancel()
+                
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                if let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !output.isEmpty {
+                    NSLog("🤖 AI edited: '\(rawText)' → '\(output)'")
+                    continuation.resume(returning: output)
+                } else {
+                    if let error = String(data: errorData, encoding: .utf8) {
+                        NSLog("❌ AI editor error: \(error)")
+                    }
+                    NSLog("⚠️ AI editor failed, using raw text")
+                    continuation.resume(returning: rawText)
+                }
+            }
+            
+            do {
+                try process.run()
+            } catch {
+                timeoutTask.cancel()
+                NSLog("❌ Failed to run AI editor: \(error)")
+                continuation.resume(returning: rawText)
+            }
+        }
+    }
+    
+    private func shouldProcessTextBuffer() -> Bool {
+        // Determine if text buffer should be processed for AI editing.
+        // Process when buffer ends with sentence-ending punctuation or reaches length threshold.
+        let trimmed = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Process if buffer ends with sentence punctuation
+        if trimmed.hasSuffix(".") || trimmed.hasSuffix("!") || trimmed.hasSuffix("?") {
+            return true
+        }
+        
+        // Process if buffer gets too long (avoid context window issues)
+        if trimmed.count > 200 {
+            return true
+        }
+        
+        return false
+    }
+    
+    @MainActor
+    private func replaceLastInsertedText(with newText: String) {
+        // Replace the last inserted text with AI-enhanced version using AXUIElement.
+        guard !lastInsertedText.isEmpty && newText != lastInsertedText else {
+            NSLog("🔄 No text replacement needed")
+            return
+        }
+        
+        NSLog("🔄 Replacing text: '\(lastInsertedText)' → '\(newText)'")
+        
+        let systemElement = AXUIElementCreateSystemWide()
+        var focusedElement: CFTypeRef?
+        
+        // Get currently focused element
+        if AXUIElementCopyAttributeValue(systemElement, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
+           let element = focusedElement as! AXUIElement? {
+            
+            let axElement = element as! AXUIElement
+            
+            // Try to select the last inserted text and replace it
+            let lastInsertedLength = lastInsertedText.count
+            
+            // Get current selected text or cursor position
+            var selectedTextValue: AnyObject?
+            if AXUIElementCopyAttributeValue(axElement, kAXSelectedTextAttribute as CFString, &selectedTextValue) == .success {
+                // If text is selected, replace it
+                if AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, newText as CFString) == .success {
+                    NSLog("✅ Text replaced via AXSelectedText")
+                    lastInsertedText = newText
+                    return
+                }
+            }
+            
+            // Fallback: Try to select last inserted text by moving cursor and selecting
+            var selectedRangeValue: AnyObject?
+            if AXUIElementCopyAttributeValue(axElement, kAXSelectedTextRangeAttribute as CFString, &selectedRangeValue) == .success,
+               let rangeValue = selectedRangeValue {
+                
+                var range = CFRange()
+                if AXValueGetValue(rangeValue as! AXValue, .cfRange, &range) {
+                    // Select the last inserted text
+                    var newRange = CFRange(location: max(0, range.location - lastInsertedLength), length: lastInsertedLength)
+                    let newRangeValue = AXValueCreate(.cfRange, &newRange)!
+                    
+                    if AXUIElementSetAttributeValue(axElement, kAXSelectedTextRangeAttribute as CFString, newRangeValue) == .success {
+                        // Now replace the selected text
+                        if AXUIElementSetAttributeValue(axElement, kAXSelectedTextAttribute as CFString, newText as CFString) == .success {
+                            NSLog("✅ Text replaced via range selection")
+                            lastInsertedText = newText
+                            return
+                        }
+                    }
+                }
+            }
+        }
+        
+        NSLog("⚠️ Could not replace text via AXUIElement, text remains as-is")
     }
     
     private func checkAccessibilityPermissions() {
@@ -933,13 +1094,64 @@ class VoiceDictationService {
             
             if !trimmedText.isEmpty {
                 NSLog("📝 Transcribed text: '\(trimmedText)'")
-                await insertText(trimmedText)
+                await processAndInsertText(trimmedText)
             } else {
                 NSLog("⚠️ Text is empty after trimming whitespace")
             }
         } else {
             NSLog("❌ No text in first transcription result")
         }
+    }
+    
+    // AI Enhancement: Process raw text through AI editor
+    private func enhanceTextWithAI(_ rawText: String) async -> String {
+        guard aiEditingEnabled else {
+            NSLog("🤖 AI editing disabled, using raw text")
+            return rawText
+        }
+        
+        NSLog("🤖 Enhancing text with AI: '\(rawText)'")
+        
+        return await withCheckedContinuation { continuation in
+            let process = Process()
+            process.launchPath = pythonPath
+            process.arguments = [aiEditorScriptPath, rawText]
+            
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+            
+            process.terminationHandler = { _ in
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                if let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), 
+                   !output.isEmpty {
+                    NSLog("🤖 AI enhanced text: '\(output)'")
+                    continuation.resume(returning: output)
+                } else {
+                    NSLog("⚠️ AI editing failed, using raw text")
+                    if let errorString = String(data: errorData, encoding: .utf8), !errorString.isEmpty {
+                        NSLog("🤖 AI Error: \(errorString)")
+                    }
+                    continuation.resume(returning: rawText)
+                }
+            }
+            
+            do {
+                try process.run()
+            } catch {
+                NSLog("❌ Failed to run AI editor: \(error)")
+                continuation.resume(returning: rawText)
+            }
+        }
+    }
+    
+    // Enhanced text processing pipeline
+    private func processAndInsertText(_ rawText: String) async {
+        let enhancedText = await enhanceTextWithAI(rawText)
+        await insertText(enhancedText)
     }
     
     @MainActor
@@ -949,12 +1161,42 @@ class VoiceDictationService {
         let processedText = processCommands(text)
         NSLog("⌨️ Processed text: '\(processedText)'")
         
+        // Add to buffer for AI processing
+        textBuffer += " " + processedText
+        textBuffer = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Insert raw text immediately for responsiveness
+        await insertRawText(processedText)
+        lastInsertedText = processedText
+        
+        // Check if we should process the buffer for AI editing
+        if shouldProcessTextBuffer() {
+            NSLog("🤖 Processing text buffer for AI enhancement...")
+            let currentBuffer = textBuffer
+            
+            // Process buffer with AI in background
+            Task {
+                let enhancedText = await callAIEditor(currentBuffer)
+                if enhancedText != currentBuffer {
+                    await MainActor.run {
+                        self.replaceLastInsertedText(with: enhancedText)
+                    }
+                }
+            }
+            
+            // Clear buffer after processing
+            textBuffer = ""
+        }
+    }
+    
+    @MainActor
+    private func insertRawText(_ text: String) async {
         // Wispr Flow approach: Always attempt AXUIElement insertion first
         // This bypasses the macOS Sequoia TCC cache bug where AXIsProcessTrusted() 
         // returns false despite granted permissions
         NSLog("🚀 ATTEMPTING AXUIElement insertion (bypassing TCC cache check)")
         
-        if await attemptAXUIElementInsertion(processedText) {
+        if await attemptAXUIElementInsertion(text) {
             NSLog("✅ AXUIElement insertion successful - bypassed TCC cache bug!")
             return
         }
@@ -969,7 +1211,7 @@ class VoiceDictationService {
         }
         
         NSLog("⚠️ Using fallback CGEvent method (slower but works)")
-        for char in processedText {
+        for char in text {
             await insertCharacter(String(char))
         }
     }

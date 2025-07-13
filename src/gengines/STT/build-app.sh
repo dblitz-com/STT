@@ -38,6 +38,21 @@ else
     echo "⚠️ Dictation sounds not found in Resources/"
 fi
 
+# Copy AI editor script and virtual environment
+if [ -f "ai_editor.py" ]; then
+    cp ai_editor.py "$APP_DIR/Contents/Resources/"
+    echo "✅ Copied AI editor script to app bundle"
+else
+    echo "⚠️ AI editor script not found"
+fi
+
+if [ -d "venv" ]; then
+    cp -r venv "$APP_DIR/Contents/Resources/"
+    echo "✅ Copied Python virtual environment to app bundle"
+else
+    echo "⚠️ Python virtual environment not found"
+fi
+
 # Sign the app with entitlements (Wispr Flow approach - no sandbox)
 codesign --force --deep --sign - --entitlements STTDictate.entitlements "$APP_DIR"
 
