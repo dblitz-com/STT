@@ -1135,8 +1135,15 @@ class VoiceDictationService {
     // 🔥 NEW: Session-based AI processing - called once at end of recording
     @MainActor
     private func processSessionWithAI() async {
+        NSLog("🚨 DEBUG: processSessionWithAI() CALLED")
+        NSLog("🚨 DEBUG: sessionBuffer isEmpty: \(sessionBuffer.isEmpty)")
+        NSLog("🚨 DEBUG: sessionBuffer content: '\\(sessionBuffer)'")
+        NSLog("🚨 DEBUG: sessionBuffer length: \(sessionBuffer.count)")
+        NSLog("🚨 DEBUG: aiEditingEnabled: \(aiEditingEnabled)")
+        
         guard !sessionBuffer.isEmpty && aiEditingEnabled else {
             NSLog("📝 Session buffer empty or AI disabled - skipping session AI processing")
+            NSLog("🚨 DEBUG: GUARD FAILED - sessionBuffer.isEmpty: \(sessionBuffer.isEmpty), aiEditingEnabled: \(aiEditingEnabled)")
             return
         }
         
@@ -1145,10 +1152,12 @@ class VoiceDictationService {
         
         // Phase 3: Detect current context for entire session
         let context = await contextManager.getCurrentContext()
-        NSLog("🎯 SESSION CONTEXT: \(context.appCategory ?? "unknown") - \(context.uiContext ?? "unknown")")
+        NSLog("🎯 SESSION CONTEXT: \(context.appCategory) - \(context.uiContext)")
         
         // Check if entire session is a command
+        NSLog("🚨 DEBUG: About to call classifyText...")
         let classification = await classifyText(sessionBuffer)
+        NSLog("🚨 DEBUG: classifyText returned: isCommand=\(classification.isCommand), intent=\(classification.intent)")
         
         if classification.isCommand {
             NSLog("🎯 SESSION COMMAND: Detected entire session as command: \(classification.intent)")
@@ -1162,19 +1171,32 @@ class VoiceDictationService {
         }
         
         // Process entire session with AI for text enhancement
+        NSLog("🚨 DEBUG: About to call enhanceTextWithAI...")
         let enhancedSessionText = await enhanceTextWithAI(sessionBuffer, context: context)
+        NSLog("🚨 DEBUG: enhanceTextWithAI returned: '\\(enhancedSessionText)'")
+        NSLog("🚨 DEBUG: Original session: '\\(sessionBuffer)'")
+        NSLog("🚨 DEBUG: Texts are different: \(enhancedSessionText != sessionBuffer)")
+        
+        // 🔥 ALWAYS insert text at end - either enhanced or raw
+        let textToInsert = (enhancedSessionText != sessionBuffer) ? enhancedSessionText : sessionBuffer
         
         if enhancedSessionText != sessionBuffer {
             NSLog("🤖 SESSION AI: Enhanced text: '\\(enhancedSessionText)'")
-            await replaceEntireSession(with: enhancedSessionText, originalLength: sessionBuffer.count)
+            NSLog("🚨 DEBUG: Inserting enhanced text at cursor...")
         } else {
-            NSLog("🤖 SESSION AI: No changes made to session text")
+            NSLog("🤖 SESSION AI: No changes made - inserting raw session text")
+            NSLog("🚨 DEBUG: Inserting raw text at cursor...")
         }
+        
+        // Insert the final text (enhanced or raw) at cursor position
+        await insertRawText(textToInsert)
+        NSLog("✅ SESSION COMPLETE: Text inserted at end of session")
         
         // Clear session buffer after processing
         sessionBuffer = ""
         sessionStartPosition = nil
         NSLog("🧹 Session buffer cleared after AI processing")
+        NSLog("🚨 DEBUG: processSessionWithAI() COMPLETED")
     }
     
     // 🔥 NEW: Replace entire session text with AI-enhanced version
@@ -1460,27 +1482,10 @@ class VoiceDictationService {
         }
         sessionBuffer += processedText
         
-        // Track position for later replacement
-        if sessionStartPosition == nil {
-            // Get current cursor position to mark session start
-            let systemWide = AXUIElementCreateSystemWide()
-            var focusedElement: AnyObject?
-            if AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
-               let focused = focusedElement {
-                let focusedUIElement = focused as! AXUIElement
-                
-                var currentValue: AnyObject?
-                if AXUIElementCopyAttributeValue(focusedUIElement, kAXValueAttribute as CFString, &currentValue) == .success,
-                   let currentText = currentValue as? String {
-                    sessionStartPosition = currentText.endIndex
-                    NSLog("📍 Session start position marked at index \(currentText.count)")
-                }
-            }
-        }
-        
-        // Insert raw text immediately for responsiveness
-        await insertRawText(processedText)
+        // 🔥 DO NOT INSERT TEXT DURING RECORDING!
+        // Only accumulate in session buffer for end-of-session processing
         NSLog("📝 Session buffer now: '\(sessionBuffer)' (\(sessionBuffer.count) chars)")
+        NSLog("🚫 NOT inserting text during recording - will insert all at end")
     }
     
     // Legacy method - keeping for backward compatibility
