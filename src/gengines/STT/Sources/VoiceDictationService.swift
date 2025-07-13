@@ -1166,7 +1166,7 @@ class VoiceDictationService {
         
         if enhancedSessionText != sessionBuffer {
             NSLog("🤖 SESSION AI: Enhanced text: '\\(enhancedSessionText)'")
-            await replaceEntireSession(with: enhancedSessionText)
+            await replaceEntireSession(with: enhancedSessionText, originalLength: sessionBuffer.count)
         } else {
             NSLog("🤖 SESSION AI: No changes made to session text")
         }
@@ -1179,7 +1179,7 @@ class VoiceDictationService {
     
     // 🔥 NEW: Replace entire session text with AI-enhanced version
     @MainActor
-    private func replaceEntireSession(with enhancedText: String) async {
+    private func replaceEntireSession(with enhancedText: String, originalLength: Int) async {
         NSLog("🔄 SESSION REPLACE: Replacing entire session with AI-enhanced text")
         
         let systemWide = AXUIElementCreateSystemWide()
@@ -1194,8 +1194,8 @@ class VoiceDictationService {
             if AXUIElementCopyAttributeValue(focusedUIElement, kAXValueAttribute as CFString, &currentValue) == .success,
                let currentText = currentValue as? String {
                 
-                // Calculate how much raw text to replace
-                let rawTextLength = sessionBuffer.count
+                // Calculate how much raw text to replace using original session length
+                let rawTextLength = originalLength
                 let currentTextLength = currentText.count
                 let replaceStartIndex = max(0, currentTextLength - rawTextLength)
                 
@@ -1203,7 +1203,7 @@ class VoiceDictationService {
                 let prefix = String(currentText.prefix(replaceStartIndex))
                 let newText = prefix + enhancedText
                 
-                NSLog("🔄 SESSION REPLACE: '\\(currentText.suffix(rawTextLength))' → '\\(enhancedText)'")
+                NSLog("🔄 SESSION REPLACE: Original length=\\(rawTextLength), replacing '\\(currentText.suffix(rawTextLength))' → '\\(enhancedText)'")
                 
                 // Replace text
                 if AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString) == .success {
