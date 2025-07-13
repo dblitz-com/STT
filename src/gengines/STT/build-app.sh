@@ -4,6 +4,11 @@ set -e
 
 echo "🔨 Building STT Dictate.app..."
 
+# Kill any existing STT Dictate instances
+echo "🔫 Killing any existing STT Dictate instances..."
+pkill -f "STT Dictate" || true
+sleep 0.5  # Give it time to fully quit
+
 # Build the Swift package
 swift build -c release
 
@@ -23,6 +28,14 @@ cp Info.plist "$APP_DIR/Contents/"
 # Copy WhisperKit models
 if [ -d "WhisperKit/Models" ]; then
     cp -r WhisperKit "$APP_DIR/Contents/Resources/"
+fi
+
+# Copy custom dictation sounds
+if [ -f "Resources/dictation_event1.wav" ] && [ -f "Resources/dictation_event2.wav" ]; then
+    cp Resources/dictation_event*.wav "$APP_DIR/Contents/Resources/"
+    echo "✅ Copied dictation sounds to app bundle"
+else
+    echo "⚠️ Dictation sounds not found in Resources/"
 fi
 
 # Sign the app with entitlements (Wispr Flow approach - no sandbox)

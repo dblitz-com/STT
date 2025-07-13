@@ -35,9 +35,14 @@ class VoiceDictationService {
     // Wispr Flow approach: Debug mode for testing
     private let debugMode = false // Set to false for production
     
+    // Apple dictation sounds
+    private var dictationBeginSound: NSSound?
+    private var dictationConfirmSound: NSSound?
+    
     init() {
         checkAccessibilityPermissions()
         setupWhisperKit()
+        setupDictationSounds()
         // DON'T setup hotkey in init - wait for app launch
     }
     
@@ -231,6 +236,33 @@ class VoiceDictationService {
                     print("❌ Failed to load any WhisperKit model: \(error)")
                 }
             }
+        }
+    }
+    
+    private func setupDictationSounds() {
+        NSLog("🔊 Loading custom dictation sounds...")
+        
+        // Load custom dictation sounds from app bundle Resources
+        if let bundle = Bundle.main.resourcePath {
+            // Load begin sound (dictation_event1.wav)
+            let beginSoundPath = bundle + "/dictation_event1.wav"
+            if FileManager.default.fileExists(atPath: beginSoundPath) {
+                dictationBeginSound = NSSound(contentsOfFile: beginSoundPath, byReference: true)
+                NSLog("✅ Loaded dictation begin sound: dictation_event1.wav")
+            } else {
+                NSLog("⚠️ Dictation begin sound not found at: \(beginSoundPath)")
+            }
+            
+            // Load confirm sound (dictation_event2.wav)
+            let confirmSoundPath = bundle + "/dictation_event2.wav"
+            if FileManager.default.fileExists(atPath: confirmSoundPath) {
+                dictationConfirmSound = NSSound(contentsOfFile: confirmSoundPath, byReference: true)
+                NSLog("✅ Loaded dictation confirm sound: dictation_event2.wav")
+            } else {
+                NSLog("⚠️ Dictation confirm sound not found at: \(confirmSoundPath)")
+            }
+        } else {
+            NSLog("❌ Could not find app bundle resource path")
         }
     }
     
@@ -600,6 +632,10 @@ class VoiceDictationService {
             
             // Update visual feedback
             AppDelegate.shared?.updateRecordingState(isRecording: true)
+            
+            // Play Apple dictation begin sound
+            dictationBeginSound?.play()
+            
             bufferQueue.sync {
                 audioBuffer.removeAll()
             }
@@ -725,6 +761,9 @@ class VoiceDictationService {
         
         // Update visual feedback
         AppDelegate.shared?.updateRecordingState(isRecording: false)
+        
+        // Play Apple dictation confirm sound
+        dictationConfirmSound?.play()
         
         // Stop audio engine safely and remove tap
         if audioEngine.isRunning {
