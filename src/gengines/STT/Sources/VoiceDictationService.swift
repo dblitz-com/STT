@@ -273,12 +273,12 @@ class VoiceDictationService {
     }
     
     private func handleTCCCacheBug() {
-        NSLog("🔧 HANDLING SEQUOIA TCC CACHE BUG - Known issue affecting rebuilt/self-signed apps")
+        NSLog("🔧 HANDLING SEQUOIA TCC CACHE BUG - Development issue with rebuilt/self-signed apps")
         NSLog("")
-        NSLog("📋 AUTOMATED REMEDIATION STEPS:")
-        NSLog("1. Attempting automated TCC reset...")
+        NSLog("📋 AUTOMATED INTERNAL TCC CACHE FIX:")
         
-        // Step 1: Automated TCC reset
+        // Step 1: Quick automated attempt first
+        NSLog("1. Attempting automated TCC reset and daemon reload...")
         let resetResult = resetTCCDatabase()
         if resetResult {
             NSLog("✅ TCC database reset successful")
@@ -289,16 +289,16 @@ class VoiceDictationService {
         // Step 2: Daemon reload
         reloadSystemDaemons()
         
-        // Step 3: Re-test after automated fixes
+        // Step 3: Quick re-test after automated fixes
         let retestResult = AXIsProcessTrusted()
         if retestResult {
             NSLog("🎉 AUTOMATED FIX SUCCESSFUL - TCC cache bug resolved!")
             return
         }
         
-        // Step 4: Manual intervention required
-        NSLog("❌ Automated fixes insufficient - manual intervention required")
-        showTCCCacheBugInstructions()
+        // Step 4: Manual intervention required - handle internally
+        NSLog("❌ Automated fixes insufficient - manual TCC cache clearance required")
+        showTCCCacheFixDialog()
     }
     
     private func resetTCCDatabase() -> Bool {
@@ -336,6 +336,61 @@ class VoiceDictationService {
         
         // Give daemons time to restart
         Thread.sleep(forTimeInterval: 2.0)
+    }
+    
+    private func showTCCCacheFixDialog() {
+        NSLog("🚀 SHOWING INTERNAL TCC CACHE FIX DIALOG")
+        NSLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        
+        // Auto-open System Settings to Accessibility panel
+        NSLog("📱 Auto-opening System Settings → Accessibility...")
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        
+        // Show user-friendly notification
+        DispatchQueue.main.async {
+            AppDelegate.shared?.showNotification(
+                title: "🔧 TCC Cache Fix Required",
+                message: "System Settings opened. Remove and re-add STT Dictate in Accessibility to fix text insertion."
+            )
+        }
+        
+        // Log clear instructions
+        NSLog("")
+        NSLog("👆 SIMPLE STEPS TO FIX:")
+        NSLog("   1. In System Settings → Accessibility:")
+        NSLog("   2. Find 'STT Dictate' and REMOVE it (uncheck + click [-])")
+        NSLog("   3. Click [+] and re-add '/Applications/STT Dictate.app'")
+        NSLog("   4. Check the box to enable")
+        NSLog("")
+        NSLog("🎯 This clears the TCC cache and restores fast text insertion!")
+        NSLog("🔄 The app will automatically detect when permissions are restored")
+        NSLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        
+        // Set up periodic permission checking to detect when fixed
+        startPermissionMonitoring()
+    }
+    
+    private func startPermissionMonitoring() {
+        NSLog("🔄 Starting permission monitoring to detect TCC cache fix completion...")
+        
+        // Check every 3 seconds if permissions are restored
+        Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { timer in
+            let isFixed = AXIsProcessTrusted()
+            if isFixed {
+                NSLog("✅ TCC CACHE FIX SUCCESSFUL - Permissions restored!")
+                NSLog("🎉 Fast AXUIElement text insertion is now working!")
+                
+                // Show success notification
+                DispatchQueue.main.async {
+                    AppDelegate.shared?.showNotification(
+                        title: "✅ TCC Cache Fixed!",
+                        message: "Accessibility permissions restored. Fast text insertion is now working!"
+                    )
+                }
+                
+                timer.invalidate()
+            }
+        }
     }
     
     private func showTCCCacheBugInstructions() {
@@ -546,6 +601,9 @@ class VoiceDictationService {
         
         NSLog("🎤 Starting recording process...")
         
+        // Play start recording sound
+        NSSound(named: "Glass")?.play()
+        
         // Check microphone permission status first
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         
@@ -722,6 +780,9 @@ class VoiceDictationService {
         
         NSLog("🛑 Stopping recording...")
         isRecording = false
+        
+        // Play stop recording sound
+        NSSound(named: "Tink")?.play()
         
         // Update visual feedback
         AppDelegate.shared?.updateRecordingState(isRecording: false)
@@ -968,7 +1029,21 @@ class VoiceDictationService {
             case .notImplemented: NSLog("   AXError: notImplemented")
             case .notificationAlreadyRegistered: NSLog("   AXError: notificationAlreadyRegistered")
             case .notificationNotRegistered: NSLog("   AXError: notificationNotRegistered")
-            case .apiDisabled: NSLog("   AXError: apiDisabled")
+            case .apiDisabled: 
+                NSLog("   AXError: apiDisabled")
+                NSLog("🚨 TCC CACHE BUG DETECTED - Auto-opening System Settings!")
+                
+                // Auto-open System Settings to Accessibility panel
+                DispatchQueue.main.async {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                    
+                    // Show notification
+                    AppDelegate.shared?.showNotification(
+                        title: "🔧 TCC Cache Bug Detected",
+                        message: "System Settings opened. Remove and re-add STT Dictate in Accessibility to fix text insertion."
+                    )
+                }
+                
             case .noValue: NSLog("   AXError: noValue")
             case .parameterizedAttributeUnsupported: NSLog("   AXError: parameterizedAttributeUnsupported")
             case .notEnoughPrecision: NSLog("   AXError: notEnoughPrecision")
