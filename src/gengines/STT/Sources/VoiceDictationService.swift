@@ -39,8 +39,10 @@ class VoiceDictationService {
     private var dictationBeginSound: NSSound?
     private var dictationConfirmSound: NSSound?
     
-    // AI editing
-    private var textBuffer: String = ""
+    // AI editing - Session-based approach
+    private var sessionBuffer: String = ""  // Accumulates entire session text
+    private var sessionStartPosition: String.Index? // Track where session started for replacement
+    private var textBuffer: String = ""  // Legacy buffer (keeping for compatibility)
     private var lastInsertedText: String = ""
     private let aiEditingEnabled = true // Toggle AI enhancement
     private let pythonPath: String
@@ -948,6 +950,11 @@ class VoiceDictationService {
             
             isRecording = true
             
+            // 🔥 NEW: Clear session buffer for new recording session
+            sessionBuffer = ""
+            sessionStartPosition = nil
+            NSLog("📝 Session buffer cleared - starting new dictation session")
+            
             // Update visual feedback
             AppDelegate.shared?.updateRecordingState(isRecording: true)
             
@@ -1108,13 +1115,101 @@ class VoiceDictationService {
                 Task {
                     await processChunk()
                     NSLog("✅ Final audio chunk processed")
+                    
+                    // 🔥 NEW: Process entire session with AI after all transcription is done
+                    await self.processSessionWithAI()
                 }
             } else {
                 NSLog("📊 No remaining audio in buffer for final processing")
+                
+                // 🔥 NEW: Process entire session with AI even if no final chunk
+                Task {
+                    await self.processSessionWithAI()
+                }
             }
         }
         
         NSLog("✅ Recording stopped successfully")
+    }
+    
+    // 🔥 NEW: Session-based AI processing - called once at end of recording
+    @MainActor
+    private func processSessionWithAI() async {
+        guard !sessionBuffer.isEmpty && aiEditingEnabled else {
+            NSLog("📝 Session buffer empty or AI disabled - skipping session AI processing")
+            return
+        }
+        
+        NSLog("🤖 SESSION AI: Processing entire session buffer (\\(sessionBuffer.count) chars)")
+        NSLog("🤖 SESSION AI: Raw text: '\\(sessionBuffer)'")
+        
+        // Get current context for AI processing
+        let context = await contextManager.getCurrentContext()
+        
+        // Process entire session with AI
+        let enhancedSessionText = await enhanceTextWithAI(sessionBuffer, context: context)
+        
+        if enhancedSessionText != sessionBuffer {
+            NSLog("🤖 SESSION AI: Enhanced text: '\\(enhancedSessionText)'")
+            await replaceEntireSession(with: enhancedSessionText)
+        } else {
+            NSLog("🤖 SESSION AI: No changes made to session text")
+        }
+        
+        // Clear session buffer after processing
+        sessionBuffer = ""
+        sessionStartPosition = nil
+        NSLog("🧹 Session buffer cleared after AI processing")
+    }
+    
+    // 🔥 NEW: Replace entire session text with AI-enhanced version
+    @MainActor
+    private func replaceEntireSession(with enhancedText: String) async {
+        NSLog("🔄 SESSION REPLACE: Replacing entire session with AI-enhanced text")
+        
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedElement: AnyObject?
+        
+        if AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
+           let focused = focusedElement {
+            let focusedUIElement = focused as! AXUIElement
+            
+            // Get current text
+            var currentValue: AnyObject?
+            if AXUIElementCopyAttributeValue(focusedUIElement, kAXValueAttribute as CFString, &currentValue) == .success,
+               let currentText = currentValue as? String {
+                
+                // Calculate how much raw text to replace
+                let rawTextLength = sessionBuffer.count
+                let currentTextLength = currentText.count
+                let replaceStartIndex = max(0, currentTextLength - rawTextLength)
+                
+                // Build new text: keep everything before session + enhanced text
+                let prefix = String(currentText.prefix(replaceStartIndex))
+                let newText = prefix + enhancedText
+                
+                NSLog("🔄 SESSION REPLACE: '\\(currentText.suffix(rawTextLength))' → '\\(enhancedText)'")
+                
+                // Replace text
+                if AXUIElementSetAttributeValue(focusedUIElement, kAXValueAttribute as CFString, newText as CFString) == .success {
+                    
+                    // Set cursor at end of enhanced text
+                    let newCursorPosition = newText.count
+                    var newRange = CFRange(location: newCursorPosition, length: 0)
+                    if let newAXRange = AXValueCreate(.cfRange, &newRange) {
+                        AXUIElementSetAttributeValue(focusedUIElement, kAXSelectedTextRangeAttribute as CFString, newAXRange)
+                    }
+                    
+                    NSLog("✅ SESSION REPLACE: Successfully replaced entire session with AI-enhanced text")
+                } else {
+                    NSLog("❌ SESSION REPLACE: Failed to set enhanced text via AXUIElement")
+                }
+            } else {
+                NSLog("❌ SESSION REPLACE: Failed to get current text value")
+            }
+        } else {
+            NSLog("❌ SESSION REPLACE: Failed to get focused element")
+        }
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -1346,44 +1441,50 @@ class VoiceDictationService {
             return // Don't insert command text
         }
         
-        // Not a command, process as regular text with context
-        let enhancedText = await enhanceTextWithAI(rawText, context: currentContext)
-        await insertText(enhancedText)
+        // 🔥 NEW: Session-based approach - insert raw text immediately, save AI for end
+        NSLog("📝 Adding to session: '\(rawText)' (session-based AI will process at end)")
+        await insertRawTextToSession(rawText)
     }
     
+    // 🔥 NEW: Session-based text insertion
     @MainActor
-    private func insertText(_ text: String) async {
-        NSLog("⌨️ Inserting text: '\(text)'")
+    private func insertRawTextToSession(_ rawText: String) async {
+        let processedText = processCommands(rawText)
+        NSLog("⌨️ Session insert: '\(processedText)'")
         
-        let processedText = processCommands(text)
-        NSLog("⌨️ Processed text: '\(processedText)'")
+        // Add to session buffer (will be AI-processed at end)
+        if !sessionBuffer.isEmpty {
+            sessionBuffer += " "
+        }
+        sessionBuffer += processedText
         
-        // Add to buffer for AI processing
-        textBuffer += " " + processedText
-        textBuffer = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Track position for later replacement
+        if sessionStartPosition == nil {
+            // Get current cursor position to mark session start
+            let systemWide = AXUIElementCreateSystemWide()
+            var focusedElement: AnyObject?
+            if AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
+               let focused = focusedElement {
+                let focusedUIElement = focused as! AXUIElement
+                
+                var currentValue: AnyObject?
+                if AXUIElementCopyAttributeValue(focusedUIElement, kAXValueAttribute as CFString, &currentValue) == .success,
+                   let currentText = currentValue as? String {
+                    sessionStartPosition = currentText.endIndex
+                    NSLog("📍 Session start position marked at index \(currentText.count)")
+                }
+            }
+        }
         
         // Insert raw text immediately for responsiveness
         await insertRawText(processedText)
-        lastInsertedText = processedText
-        
-        // Check if we should process the buffer for AI editing
-        if shouldProcessTextBuffer() {
-            NSLog("🤖 Processing text buffer for AI enhancement...")
-            let currentBuffer = textBuffer
-            
-            // Process buffer with AI in background
-            Task {
-                let enhancedText = await callAIEditor(currentBuffer)
-                if enhancedText != currentBuffer {
-                    await MainActor.run {
-                        self.replaceLastInsertedText(with: enhancedText)
-                    }
-                }
-            }
-            
-            // Clear buffer after processing
-            textBuffer = ""
-        }
+        NSLog("📝 Session buffer now: '\(sessionBuffer)' (\(sessionBuffer.count) chars)")
+    }
+    
+    // Legacy method - keeping for backward compatibility
+    @MainActor
+    private func insertText(_ text: String) async {
+        await insertRawTextToSession(text)
     }
     
     @MainActor
