@@ -6,6 +6,7 @@ import Carbon.HIToolbox
 import AppKit
 import ApplicationServices
 import IOKit.hid  // For low-level HID monitoring
+import OSLog
 
 class VoiceDictationService {
     private var whisperKit: WhisperKit?
@@ -807,101 +808,166 @@ class VoiceDictationService {
     
     @MainActor
     private func insertText(_ text: String) async {
-        NSLog("⌨️ Inserting text: '\(text)'")
+        let logger = Logger(subsystem: "com.stt.dictate", category: "accessibility")
         
         let processedText = processCommands(text)
-        NSLog("⌨️ Processed text: '\(processedText)'")
+        NSLog("🔧 NEW COMPREHENSIVE insertText() called with: '\(processedText)'")
+        NSLog("⌨️ Inserting text: '\(processedText)'")
         
-        // Attempt fast AXUIElement insertion - bypasses AXIsProcessTrusted() caching bug
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedElement: AnyObject?
-        let copyError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        guard !processedText.isEmpty else {
+            logger.info("No text to insert")
+            return
+        }
+
+        // Check if Accessibility is trusted
+        let isTrusted = AXIsProcessTrusted()
+        NSLog("🔐 AXIsProcessTrusted() = \(isTrusted)")
+        if !isTrusted {
+            logger.error("Accessibility API not trusted; prompt user to grant in System Settings")
+            NSLog("❌ Accessibility not trusted - falling back to clipboard")
+            fallbackToClipboard(processedText)
+            return
+        }
+
+        // Get frontmost app PID (safer than system-wide for focused element)
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let pid = pid_t(exactly: frontApp.processIdentifier) else {
+            logger.error("No frontmost application found")
+            NSLog("❌ No frontmost application - falling back to clipboard")
+            fallbackToClipboard(processedText)
+            return
+        }
         
-        if copyError == .success, let focused = focusedElement {
-            let focusedUI = focused as! AXUIElement
-            // Verify editable text element
-            var role: AnyObject?
-            AXUIElementCopyAttributeValue(focusedUI, kAXRoleAttribute as CFString, &role)
-            let isTextElement = (role as? String == kAXTextFieldRole || role as? String == kAXTextAreaRole)
-            
-            // Skip editable check as kAXEditableAttribute doesn't exist - try insertion anyway
-            if isTextElement {
-                // Get current value and range
-                var currentValue: AnyObject?
-                if AXUIElementCopyAttributeValue(focusedUI, kAXValueAttribute as CFString, &currentValue) == .success,
-                   let currentText = currentValue as? String {
-                    
-                    var rangeValue: AnyObject?
-                    if AXUIElementCopyAttributeValue(focusedUI, kAXSelectedTextRangeAttribute as CFString, &rangeValue) == .success,
-                       let axRange = rangeValue,
-                       CFGetTypeID(axRange) == AXValueGetTypeID(),
-                       AXValueGetType(axRange as! AXValue) == .cfRange {
-                        
-                        var cfRange = CFRange()
-                        AXValueGetValue(axRange as! AXValue, .cfRange, &cfRange)
-                        
-                        let insertLocation = cfRange.location
-                        let selectionLength = cfRange.length
-                        
-                        // Insert/replace
-                        let prefixEnd = currentText.index(currentText.startIndex, offsetBy: insertLocation)
-                        let suffixStart = currentText.index(prefixEnd, offsetBy: selectionLength)
-                        let prefix = String(currentText[..<prefixEnd])
-                        let suffix = String(currentText[suffixStart...])
-                        let newText = prefix + processedText + suffix
-                        
-                        if AXUIElementSetAttributeValue(focusedUI, kAXValueAttribute as CFString, newText as CFString) == .success {
-                            // Update cursor
-                            let newCursorLocation = insertLocation + processedText.count
-                            var newRange = CFRange(location: newCursorLocation, length: 0)
-                            if let newAXRange = AXValueCreate(.cfRange, &newRange) {
-                                AXUIElementSetAttributeValue(focusedUI, kAXSelectedTextRangeAttribute as CFString, newAXRange)
-                            }
-                            NSLog("✅ Fast AXUIElement insertion successful")
-                            return
-                        }
-                    }
+        NSLog("🔍 Frontmost app: \(frontApp.localizedName ?? "Unknown") (PID: \(frontApp.processIdentifier))")
+
+        let appElement = AXUIElementCreateApplication(pid)
+
+        // Force initialization: Read app role (workaround for hierarchy init issues)
+        var role: CFTypeRef?
+        let initError = AXUIElementCopyAttributeValue(appElement, kAXRoleAttribute as CFString, &role)
+        if initError != .success {
+            logger.debug("App role init failed: \(initError.rawValue) – continuing anyway")
+        } else if let roleStr = role as? String {
+            logger.debug("App role: \(roleStr)")
+            NSLog("🔍 App role: \(roleStr)")
+        }
+
+        // Retry loop for focused element (handle timing/messaging failures)
+        var focusedElement: AXUIElement?
+        for attempt in 1...3 {
+            var focused: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused)
+            if error == .success {
+                let elem = focused as! AXUIElement
+                focusedElement = elem
+                logger.info("Got focused element on attempt \(attempt)")
+                NSLog("✅ Got focused element on attempt \(attempt)")
+                break
+            } else {
+                logger.warning("Focused element copy failed on attempt \(attempt): \(error.rawValue)")
+                NSLog("⚠️ Attempt \(attempt) failed: error \(error.rawValue)")
+                if attempt < 3 {
+                    try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s delay
                 }
             }
-            NSLog("⚠️ AXUIElement failed - falling back to CGEvent")
-        } else {
-            NSLog("❌ AXUIElement copy failed with error: \(copyError) - falling back")
         }
-        
-        // Fallback to slow CGEvent insertion
-        for char in processedText {
-            await insertCharacter(String(char))
+
+        guard let startingElement = focusedElement else {
+            logger.error("Exhausted retries; no focused element")
+            NSLog("❌ Exhausted retries - falling back to clipboard")
+            fallbackToClipboard(processedText)
+            return
         }
-        
-        NSLog("✅ Text insertion completed (fallback used)")
+
+        // Hierarchy traversal and insertion
+        var currentElement: AXUIElement? = startingElement
+        while let element = currentElement {
+            // Prioritize insertion at cursor via kAXSelectedTextAttribute
+            var isSettable: DarwinBoolean = false
+            var error = AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &isSettable)
+            if error == .success && isSettable.boolValue {
+                error = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, processedText as CFString)
+                if error == .success {
+                    logger.info("Inserted text at cursor using kAXSelectedTextAttribute")
+                    NSLog("✅ Direct insertion successful (kAXSelectedTextAttribute)")
+                    return
+                } else {
+                    logger.error("Failed to set kAXSelectedTextAttribute: \(error.rawValue)")
+                }
+            } else if error != .success {
+                logger.debug("kAXSelectedTextAttribute not available or check failed: \(error.rawValue)")
+            }
+
+            // Fallback: Append to end via kAXValueAttribute
+            var isValueSettable: DarwinBoolean = false
+            error = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &isValueSettable)
+            if error == .success && isValueSettable.boolValue {
+                var value: CFTypeRef?
+                error = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
+                if error == .success, let currentText = value as? String {
+                    let newText = currentText + processedText
+                    error = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, newText as CFString)
+                    if error == .success {
+                        logger.info("Appended text using kAXValueAttribute")
+                        NSLog("✅ Direct insertion successful (kAXValueAttribute)")
+                        return
+                    } else {
+                        logger.error("Failed to set kAXValueAttribute: \(error.rawValue)")
+                    }
+                } else {
+                    logger.debug("Failed to get current kAXValueAttribute: \(error.rawValue)")
+                }
+            } else if error != .success {
+                logger.debug("kAXValueAttribute not available or check failed: \(error.rawValue)")
+            }
+
+            // Traverse to parent
+            var parent: CFTypeRef?
+            error = AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parent)
+            if error != .success || parent == nil {
+                logger.debug("No parent element available: \(error.rawValue)")
+                break
+            }
+            currentElement = parent as! AXUIElement
+
+            // Stop at window/app level
+            var role: CFTypeRef?
+            AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+            if let roleStr = role as? String, [kAXWindowRole, kAXApplicationRole].contains(roleStr) {
+                logger.debug("Reached window/application level; stopping traversal")
+                break
+            }
+        }
+
+        logger.error("Exhausted hierarchy; no suitable element for direct insertion")
+        NSLog("⚠️ NEW CODE: Hierarchy exhausted - falling back to clipboard")
+        fallbackToClipboard(processedText)
     }
     
-    @MainActor
-    private func insertCharacter(_ char: String) async {
-        NSLog("🔢 OLD METHOD: Inserting character: '\(char)'")
+    private func fallbackToClipboard(_ text: String) {
+        let logger = Logger(subsystem: "com.stt.dictate", category: "accessibility")
         
-        // Create keyDown event
-        if let keyDownEvent = createKeyEvent(for: char, keyDown: true) {
-            keyDownEvent.post(tap: .cghidEventTap)
-            NSLog("⬇️ KeyDown posted for '\(char)'")
-            
-            // Small delay between keyDown and keyUp
-            try? await Task.sleep(nanoseconds: 5_000_000) // 5ms
-            
-            // Create keyUp event
-            if let keyUpEvent = createKeyEvent(for: char, keyDown: false) {
-                keyUpEvent.post(tap: .cghidEventTap)
-                NSLog("⬆️ KeyUp posted for '\(char)'")
-            } else {
-                NSLog("❌ Failed to create keyUp event for '\(char)'")
-            }
-            
-            // Delay between characters
-            try? await Task.sleep(nanoseconds: 15_000_000) // 15ms
-        } else {
-            NSLog("❌ Failed to create keyDown event for '\(char)'")
-        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        
+        // Show notification to user
+        AppDelegate.shared?.showNotification(
+            title: "STT Dictate", 
+            message: "Text copied to clipboard: \"\(text)\". Press Cmd+V to paste."
+        )
+        
+        logger.info("Fell back to clipboard; user must paste manually")
+        NSLog("✅ Clipboard fallback completed - text ready to paste")
     }
+    
+    // DISABLED: This method caused system freezes due to CGEvent posting
+    // @MainActor
+    // private func insertCharacter(_ char: String) async {
+    //     NSLog("🚨 DANGEROUS METHOD: This causes system freezes - DO NOT USE")
+    //     // This method posted CGEvents using .cghidEventTap which blocks system event pipeline
+    //     // Replaced with safe clipboard insertion above
+    // }
     
     private func processCommands(_ text: String) -> String {
         var result = text
