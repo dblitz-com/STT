@@ -9,53 +9,33 @@ Open-source voice-to-text system for Mac that intercepts the Fn key to toggle di
 - Insert transcribed text into any active application
 - Run as background service with minimal UI (menu bar icon)
 
-## 🚨 CRITICAL: macOS Sequoia TCC Cache Bug Fix (REQUIRED)
+## 🔧 Development Note: macOS TCC Cache Bug Workaround
 
-### The Problem
-**macOS Sequoia has a confirmed TCC (Transparency, Consent, and Control) caching bug** that affects rebuilt/self-signed apps with `LSUIElement=true`. This causes:
+### The Development-Only Issue
+During development, macOS Sequoia has a TCC (Transparency, Consent, and Control) caching bug that affects frequently rebuilt/self-signed apps. This is **NOT an issue for end users** - only developers rebuilding the app repeatedly.
 
-- `AXIsProcessTrusted()` returns `false` despite granted Accessibility permissions
-- Runtime cache tied to bundle ID survives resets, reboots, and process kills
-- Text insertion fails completely - transcription works but text doesn't appear in apps
-- Falls back to slow character-by-character CGEvent typing instead of fast AXUIElement insertion
+### The Simple Fix for Developers
+When you see character-by-character typing instead of instant text insertion:
 
-### The Solution (MANDATORY AFTER EACH BUILD)
-**Every time you build the app, you MUST run the definitive TCC cache fix:**
+1. **System Settings → Privacy & Security → Accessibility**
+2. **Remove** STT Dictate (uncheck + click [-])
+3. **Re-add** STT Dictate (click [+], select `/Applications/STT Dictate.app`)
+4. **Enable** the checkbox
 
+That's it! This clears the TCC cache and restores instant text insertion.
+
+### Why This Happens (Development Only)
+- Each rebuild changes the app signature
+- macOS caches the old signature's permissions
+- The cache persists even after granting new permissions
+- **Production apps with stable signatures don't have this issue**
+
+### Automated Helper Script (Optional)
 ```bash
-./definitive-tcc-cache-fix.sh
+./definitive-tcc-cache-fix.sh  # Guides you through the manual steps
 ```
 
-This script performs the **only known working solution** for the Sequoia TCC cache bug:
-
-1. **Kill Processes**: Terminates all STT Dictate instances and system daemons
-2. **Reset TCC Database**: Clears cached permission denials for com.stt.dictate
-3. **Manual Removal**: Opens System Settings → Accessibility for manual app removal
-4. **Manual Re-Addition**: User manually re-adds `/Applications/STT Dictate.app` 
-5. **Fresh Registration**: Bypasses cache by registering bundle ID fresh
-
-### Success Indicators
-After running the fix, you should see:
-- ✅ **Fast Text Insertion**: Text appears instantly (<50ms, no character-by-character typing)
-- ✅ **Log Shows**: `🆕 ATTEMPTING AXUIElement text insertion method`
-- ✅ **Log Shows**: `✅ Text inserted successfully at cursor position`
-- ✅ **No Bug Detection**: `✅ Accessibility granted` (no TCC cache bug detected)
-
-### Failure Indicators (Fix Required)
-If you see these, run `./definitive-tcc-cache-fix.sh`:
-- ❌ **Slow Typing**: Character-by-character text insertion
-- ❌ **Log Shows**: `🐛 DETECTED: macOS Sequoia TCC caching bug`
-- ❌ **Log Shows**: `⚠️ Using fallback CGEvent method`
-- ❌ **Log Shows**: `❌ ACCESSIBILITY DENIED (cached)`
-
-### Automated Detection
-The app now automatically detects this bug on startup with enhanced logging:
-```swift
-// Sources/VoiceDictationService.swift:initializeAfterLaunch()
-checkAccessibilityPermissions() // Runs comprehensive TCC cache bug detection
-```
-
-**This TCC cache bug fix is documented as affecting pynput, Input Leap, and other accessibility apps on Sequoia. It's a known system issue, not our bug.**
+The app will auto-detect this issue and show a notification when it occurs.
 
 ## Technical Architecture
 - **Core Engine**: WhisperKit with large-v3-turbo model for speech recognition
@@ -139,12 +119,10 @@ hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x70
 ./setup.sh                        # Install dependencies and download models
 ./build-app.sh                     # Build macOS app bundle
 mv "STT Dictate.app" /Applications/
-
-# 🚨 CRITICAL: Run TCC cache fix after EVERY build (Sequoia bug)
-./definitive-tcc-cache-fix.sh      # Fix macOS Sequoia TCC caching bug
-
 ./install-service.sh               # Install as background service (optional)
 ```
+
+**Note for Developers:** If you see character-by-character typing after rebuilding, just remove and re-add the app in System Settings → Accessibility (see Development Note above).
 
 ### Development Commands
 ```bash
@@ -169,11 +147,11 @@ The app provides extensive logging for troubleshooting:
 - Real-time event detection
 
 ### Common Issues
-1. **Text doesn't appear in apps**: macOS Sequoia TCC cache bug → Run `./definitive-tcc-cache-fix.sh`
-2. **Character-by-character typing**: TCC cache bug causing AXUIElement failure → Run fix script
-3. **No events received**: Missing Input Monitoring permission
-4. **Emoji still appears**: System settings not properly disabled
-5. **App crashes**: Insufficient code signing or wrong location
+1. **Character-by-character typing (developers)**: Remove and re-add app in Accessibility settings
+2. **No events received**: Missing Input Monitoring permission
+3. **Emoji still appears**: System settings not properly disabled
+4. **App crashes**: Insufficient code signing or wrong location
+5. **Text doesn't appear at all**: Check both Accessibility and Input Monitoring permissions
 
 ## Future Improvements
 - Alternative hotkey options (if Fn proves unreliable)
