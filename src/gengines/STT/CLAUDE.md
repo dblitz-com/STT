@@ -124,12 +124,69 @@ mv "STT Dictate.app" /Applications/
 
 **Note for Developers:** If you see character-by-character typing after rebuilding, just remove and re-add the app in System Settings → Accessibility (see Development Note above).
 
-### Development Commands
+### Safe Development Workflow
+
+**CRITICAL: Never run dev and production apps simultaneously!** Two CGEventTaps competing for the same Fn key events will cause system freezes.
+
+#### Production vs Development Apps
 ```bash
-swift build              # Build for testing
-swift run STTDictate     # Run directly (for debugging)
+# Production (daily use)
+./build-app.sh                  # Build "STT Dictate.app"
+mv "STT Dictate.app" /Applications/
+# Bundle ID: com.stt.dictate
+
+# Development (testing changes)
+./build-dev.sh                  # Build "STT Dictate Dev.app" 
+mv "STT Dictate Dev.app" /Applications/
+# Bundle ID: com.stt.dictate.dev (separate permissions)
+```
+
+#### Development Safety Features
+- **Feature Flags**: Dev builds automatically disable CGEventTap to prevent conflicts
+- **Alternative Testing**: Use Cmd+Shift+D keyboard shortcut instead of Fn key
+- **Mock Sessions**: Test AI processing with predefined text samples
+- **Debug Logging**: Enhanced logging for troubleshooting without system-level access
+
+#### VM-Based Testing (Recommended)
+```bash
+# Install VM solution (choose one)
+brew install --cask parallels-desktop    # Commercial
+brew install --cask vmware-fusion       # Commercial  
+brew install tart                        # Free, Apple Virtualization.framework
+
+# VM Workflow:
+# 1. Production app on host Mac (daily use)
+# 2. Development app in VM (safe testing)
+# 3. No conflicts, no system freezes
+```
+
+#### Development Commands
+```bash
+# Safe Development
+./build-dev.sh           # Build dev version with safety features
+swift build -c debug     # Debug build with feature flags
+swift run STTDictate     # Run directly (CGEventTap disabled in debug)
+
+# Testing & Utilities  
 ./fix-fn-key.sh         # Fix system Fn key settings
 ./test-fn-key.swift     # Simulate Fn key presses
+```
+
+#### CGEventTap Conflict Prevention
+Based on research from Karabiner-Elements and Rectangle, the solution uses:
+
+1. **Feature Flags**: Debug builds skip CGEventTap setup
+2. **Alternative Triggers**: Keyboard shortcuts for dev testing
+3. **VM Isolation**: Separate environments for production vs development
+4. **Separate Bundle IDs**: Independent TCC permissions
+
+```swift
+// Automatic conflict prevention in VoiceDictationService.swift
+#if DEBUG
+private let isDevelopmentBuild = true  // Disables CGEventTap
+#else  
+private let isDevelopmentBuild = false // Normal production behavior
+#endif
 ```
 
 ## Testing & Debugging

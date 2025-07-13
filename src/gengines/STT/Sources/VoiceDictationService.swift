@@ -35,6 +35,13 @@ class VoiceDictationService {
     // Wispr Flow approach: Debug mode for testing
     private let debugMode = false // Set to false for production
     
+    // Feature flag: Disable CGEventTap in dev builds to prevent conflicts
+    #if DEBUG
+    private let isDevelopmentBuild = true
+    #else
+    private let isDevelopmentBuild = false
+    #endif
+    
     // Apple dictation sounds
     private var dictationBeginSound: NSSound?
     private var dictationConfirmSound: NSSound?
@@ -754,7 +761,18 @@ class VoiceDictationService {
     }
     
     private func setupHotkey() {
-        NSLog("⌨️ Setting up Fn key interceptor...")
+        NSLog("⌨️ Setting up hotkey system...")
+        
+        // Feature flag: Skip CGEventTap in dev builds to prevent conflicts
+        if isDevelopmentBuild {
+            NSLog("🔧 DEV MODE: Skipping CGEventTap to prevent conflicts with production app")
+            NSLog("🔧 DEV MODE: Use Cmd+Shift+D keyboard shortcut for testing")
+            NSLog("🔧 DEV MODE: Mock sessions available for AI testing")
+            setupDebugKeyboardShortcut()
+            return
+        }
+        
+        NSLog("⌨️ PRODUCTION: Setting up Fn key interceptor...")
         
         // Check system settings
         checkSystemSettings()
@@ -857,6 +875,67 @@ class VoiceDictationService {
             print("   - App not in /Applications or not properly code-signed")
             print("   - System security restrictions")
         }
+    }
+    
+    // MARK: - Development Testing Methods
+    
+    private func setupDebugKeyboardShortcut() {
+        NSLog("🔧 DEV MODE: Setting up Cmd+Shift+D keyboard shortcut for testing")
+        
+        // Add global keyboard shortcut listener for development testing
+        NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self = self else { return }
+            
+            // Check for Cmd+Shift+D (Command + Shift + D)
+            if event.modifierFlags.contains([.command, .shift]) && 
+               event.keyCode == 2 { // 'D' key code
+                NSLog("🔧 DEV MODE: Cmd+Shift+D pressed - toggling recording")
+                self.toggleRecording()
+            }
+        }
+        
+        NSLog("✅ DEV MODE: Cmd+Shift+D shortcut active for testing")
+        
+        // Add additional dev testing options
+        setupMockSessionTesting()
+    }
+    
+    private func setupMockSessionTesting() {
+        NSLog("🔧 DEV MODE: Mock session testing available")
+        NSLog("🔧 DEV MODE: Use 'swift run STTDictate --mock-session' for AI testing")
+        
+        // Check command line arguments for mock testing
+        let arguments = CommandLine.arguments
+        if arguments.contains("--mock-session") {
+            NSLog("🔧 DEV MODE: Starting mock session test")
+            Task {
+                await self.runMockSessionTest()
+            }
+        }
+        
+        if arguments.contains("--test-ai") {
+            NSLog("🔧 DEV MODE: Testing AI editor only")
+            Task {
+                let testText = "Um, so like, this is a test of the AI editor functionality, you know?"
+                let enhanced = await self.enhanceTextWithAI(testText, context: nil)
+                NSLog("🔧 DEV MODE: AI Test - Input: '\(testText)'")
+                NSLog("🔧 DEV MODE: AI Test - Output: '\(enhanced)'")
+            }
+        }
+    }
+    
+    private func runMockSessionTest() async {
+        NSLog("🔧 DEV MODE: Running mock session test")
+        
+        // Simulate a complete recording session without actual audio
+        sessionBuffer = "Um, so like, I need to write an email to my boss about the, uh, quarterly report and stuff."
+        
+        NSLog("🔧 DEV MODE: Mock session buffer: '\(sessionBuffer)'")
+        
+        // Process with AI as if it was a real session
+        await processSessionWithAI()
+        
+        NSLog("🔧 DEV MODE: Mock session test completed")
     }
     
     func disableFnTap() {
