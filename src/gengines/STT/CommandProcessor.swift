@@ -86,6 +86,8 @@ extension VoiceDictationService {
             await executeDeleteCommand(classification.params, in: element)
         case "insert":
             await executeInsertCommand(classification.params, in: element)
+        case "tone_change":
+            await executeToneChangeCommand(classification.params, in: element)
         default:
             NSLog("⚠️ Command not implemented: \(classification.intent)")
         }
@@ -128,5 +130,91 @@ extension VoiceDictationService {
         let currentText = value as? String ?? ""
         let newText = currentText + textToInsert
         AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, newText as CFTypeRef)
+    }
+    
+    @MainActor
+    private func executeToneChangeCommand(_ params: [String: String], in element: AXUIElement) async {
+        let tone = params["tone"] ?? "formal"
+        NSLog("🎨 Changing tone to: \(tone)")
+        
+        // Get current text
+        var value: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
+        let currentText = value as? String ?? ""
+        
+        guard !currentText.isEmpty else {
+            NSLog("⚠️ No text to change tone for")
+            return
+        }
+        
+        // Apply tone change via AI command processor
+        let toneChangeResult = await applyToneChange(text: currentText, tone: tone)
+        
+        if let newText = toneChangeResult {
+            // Replace text with tone-changed version
+            AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, newText as CFTypeRef)
+            
+            // Learn this tone preference for current context
+            if let context = currentContext {
+                let toneHint = getToneHint(for: tone)
+                learningManager.learnTonePreference(context: context, preferredTone: toneHint, confidence: 0.8)
+                NSLog("🧠 Learned tone preference: \(tone) for \(context.appCategory)")
+            }
+            
+            NSSound.beep() // Confirmation
+        }
+    }
+    
+    private func applyToneChange(text: String, tone: String) async -> String? {
+        let jsonInput = [
+            "input": text,
+            "type": "tone_\(tone)"
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonInput),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            NSLog("❌ Failed to create tone change JSON")
+            return nil
+        }
+        
+        return await withCheckedContinuation { continuation in
+            let process = Process()
+            process.launchPath = pythonPath
+            process.arguments = [commandProcessorPath, jsonString]
+            
+            let outputPipe = Pipe()
+            process.standardOutput = outputPipe
+            
+            process.terminationHandler = { _ in
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                if let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    NSLog("🎨 Tone change result: \(output)")
+                    continuation.resume(returning: output)
+                } else {
+                    continuation.resume(returning: nil)
+                }
+            }
+            
+            do {
+                try process.run()
+            } catch {
+                NSLog("❌ Failed to run tone change: \(error)")
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+    
+    private func getToneHint(for tone: String) -> String {
+        switch tone.lowercased() {
+        case "formal":
+            return "formal professional tone for documents"
+        case "casual":
+            return "casual conversational tone"
+        case "professional":
+            return "professional business tone"
+        default:
+            return "neutral balanced tone"
+        }
     }
 }

@@ -52,6 +52,14 @@ class VoiceDictationService {
     private var commandHistory: [String] = []
     private let maxCommandHistory = 50
     
+    // Phase 3: Context management
+    private let contextManager = ContextManager()
+    private var contextObserver: ContextObserver?
+    private var currentContext: ContextInfo?
+    
+    // Phase 3: Learning system
+    private let learningManager = LearningManager()
+    
     init() {
         // Initialize AI editor paths
         let currentDir = FileManager.default.currentDirectoryPath
@@ -94,6 +102,12 @@ class VoiceDictationService {
         
         // CRITICAL: Check TCC permissions early to force cache refresh and detect bugs
         checkAccessibilityPermissions()
+        
+        // Phase 3: Initialize context management
+        Task { @MainActor in
+            self.contextObserver = ContextObserver(contextManager: self.contextManager)
+            NSLog("🎯 Phase 3 context management initialized")
+        }
         
         checkSystemSettings()
         // PERMANENTLY DISABLED hidutil remapping - causes system freeze in Sequoia
@@ -1246,19 +1260,45 @@ class VoiceDictationService {
         }
     }
     
-    // AI Enhancement: Process raw text through AI editor
-    private func enhanceTextWithAI(_ rawText: String) async -> String {
+    // AI Enhancement: Process raw text through AI editor with context
+    private func enhanceTextWithAI(_ rawText: String, context: ContextInfo?) async -> String {
         guard aiEditingEnabled else {
             NSLog("🤖 AI editing disabled, using raw text")
             return rawText
         }
         
-        NSLog("🤖 Enhancing text with AI: '\(rawText)'")
+        NSLog("🤖 Enhancing text with AI: '\(rawText)' (context: \(context?.appCategory ?? "none"))")
         
         return await withCheckedContinuation { continuation in
             let process = Process()
             process.launchPath = pythonPath
-            process.arguments = [aiEditorScriptPath, rawText]
+            
+            // Phase 3: Create context-aware arguments with learned preferences
+            let learnedTone = context.flatMap { learningManager.getPreferredTone(for: $0) }
+            let finalToneHint = learnedTone ?? context?.toneHint ?? "neutral balanced tone"
+            
+            let contextData: [String: Any] = [
+                "text": rawText,
+                "context": [
+                    "app_id": context?.appId ?? "unknown",
+                    "app_category": context?.appCategory ?? "general", 
+                    "ui_context": context?.uiContext ?? "unknown",
+                    "tone_hint": finalToneHint,
+                    "advanced_context": context?.advancedContext ?? "general",
+                    "learned_tone": learnedTone != nil
+                ]
+            ]
+            
+            NSLog("🧠 Using tone: \(finalToneHint) (learned: \(learnedTone != nil))")
+            
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: contextData),
+                  let jsonString = String(data: jsonData, encoding: .utf8) else {
+                NSLog("❌ Failed to create context JSON, falling back to raw text")
+                process.arguments = [aiEditorScriptPath, rawText]
+                return
+            }
+            
+            process.arguments = [aiEditorScriptPath, jsonString]
             
             let outputPipe = Pipe()
             let errorPipe = Pipe()
@@ -1293,6 +1333,10 @@ class VoiceDictationService {
     
     // Enhanced text processing pipeline
     private func processAndInsertText(_ rawText: String) async {
+        // Phase 3: Detect current context
+        currentContext = await contextManager.getCurrentContext()
+        NSLog("🎯 Context detected: \(currentContext?.appCategory ?? "unknown") - \(currentContext?.uiContext ?? "unknown")")
+        
         // First, check if this is a command
         let classification = await classifyText(rawText)
         
@@ -1302,8 +1346,8 @@ class VoiceDictationService {
             return // Don't insert command text
         }
         
-        // Not a command, process as regular text
-        let enhancedText = await enhanceTextWithAI(rawText)
+        // Not a command, process as regular text with context
+        let enhancedText = await enhanceTextWithAI(rawText, context: currentContext)
         await insertText(enhancedText)
     }
     
