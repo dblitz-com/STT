@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Wake Word Detection for STT Dictate Phase 4A
-Uses Porcupine for "Hey STT" detection with high accuracy and low latency.
+Uses openWakeWord for custom "Zeus" detection with high accuracy and low latency.
 """
 
 import sys
@@ -9,64 +9,70 @@ import json
 import numpy as np
 from typing import Optional, List, Dict, Any
 
+# Try to import openWakeWord (primary solution)
+try:
+    from openwakeword.model import Model as OpenWakeWordModel
+    OPENWAKEWORD_AVAILABLE = True
+    print("DEBUG: openWakeWord available", file=sys.stderr)
+except Exception as e:
+    OPENWAKEWORD_AVAILABLE = False
+    print(f"DEBUG: openWakeWord not available: {e}", file=sys.stderr)
+
 # Try to import Porcupine (graceful fallback if not installed)
 try:
     import pvporcupine
-    PORCUPINE_AVAILABLE = True
-except ImportError:
+    # Test if we can actually use it (code signing check)
+    test_keywords = pvporcupine.KEYWORDS
+    if 'computer' in test_keywords:
+        PORCUPINE_AVAILABLE = True
+        print("DEBUG: Porcupine available with built-in keywords", file=sys.stderr)
+    else:
+        PORCUPINE_AVAILABLE = False
+        print("DEBUG: Porcupine loaded but no 'computer' keyword available", file=sys.stderr)
+except Exception as e:
     PORCUPINE_AVAILABLE = False
-    print("DEBUG: Porcupine not available, using fallback keyword detection", file=sys.stderr)
+    print(f"DEBUG: Porcupine not available: {e}", file=sys.stderr)
 
 # Configuration
 SAMPLE_RATE = 16000
-FRAME_LENGTH = 512  # Porcupine frame length
-WAKE_WORDS = ["hey-stt", "hey-assistant", "computer"]
+FRAME_LENGTH = 512  # Porcupine frame length (still used for compatibility)
+OWW_FRAME_LENGTH = 1280  # openWakeWord prefers 80ms frames (1280 samples at 16kHz)
+WAKE_WORDS = ["alexa", "hey_jarvis", "hey_mycroft"]  # Available openWakeWord models
+TARGET_WAKE_WORDS = ["zeus", "hey_zeus"]  # Custom wake words we want to train
 FALLBACK_KEYWORDS = ["hey", "stt", "dictate", "computer"]
 
 class WakeWordDetector:
     def __init__(self):
         self.porcupine = None
+        self.openwakeword_model = None
         self.is_initialized = False
         self.keyword_buffer = []
         self.buffer_max_seconds = 3.0  # Keep 3 seconds of audio for keyword matching
         self.buffer_max_samples = int(SAMPLE_RATE * self.buffer_max_seconds)
+        self.detection_method = "none"  # Track which method is being used
         
         print("DEBUG: Initializing wake word detector...", file=sys.stderr)
         self.initialize_detector()
     
     def initialize_detector(self):
-        """Initialize Porcupine wake word detector."""
-        if not PORCUPINE_AVAILABLE:
-            print("DEBUG: Using fallback keyword detection", file=sys.stderr)
-            self.is_initialized = True
-            return
+        """Initialize openWakeWord detector."""
+        # Try openWakeWord first (primary method)
+        if OPENWAKEWORD_AVAILABLE:
+            try:
+                # Use alexa as temporary wake word (similar to "Zeus" phonetically)
+                # Later we'll train a custom "Zeus" model
+                self.openwakeword_model = OpenWakeWordModel(wakeword_models=['alexa'])
+                self.detection_method = "openwakeword"
+                self.is_initialized = True
+                print("DEBUG: openWakeWord initialized with 'alexa' model (temp for Zeus)", file=sys.stderr)
+                return
+            except Exception as e:
+                print(f"DEBUG: openWakeWord initialization failed: {e}", file=sys.stderr)
         
-        try:
-            # Try to create Porcupine instance
-            # Note: In production, you'd need a valid access key from Picovoice
-            # For development, we'll use the built-in keywords
-            
-            # Try with built-in keywords first
-            available_keywords = pvporcupine.KEYWORDS
-            
-            # Use 'computer' or 'hey google' as closest to 'hey stt'
-            selected_keywords = []
-            if 'computer' in available_keywords:
-                selected_keywords.append('computer')
-            if 'hey google' in available_keywords:
-                selected_keywords.append('hey google')
-            
-            if selected_keywords:
-                self.porcupine = pvporcupine.create(keywords=selected_keywords)
-                self.is_initialized = True
-                print(f"DEBUG: Porcupine initialized with keywords: {selected_keywords}", file=sys.stderr)
-            else:
-                print("DEBUG: No suitable built-in keywords found, using fallback", file=sys.stderr)
-                self.is_initialized = True
-                
-        except Exception as e:
-            print(f"DEBUG: Porcupine initialization failed: {e}, using fallback", file=sys.stderr)
-            self.is_initialized = True
+        # Fallback to energy-based detection
+        print("DEBUG: Using energy-based fallback detection", file=sys.stderr)
+        self.detection_method = "fallback"
+        self.is_initialized = True
     
     def process_audio_chunk(self, audio_samples: List[float]) -> Dict[str, Any]:
         """
@@ -92,8 +98,8 @@ class WakeWordDetector:
             self.keyword_buffer = self.keyword_buffer[-self.buffer_max_samples:]
         
         try:
-            if PORCUPINE_AVAILABLE and self.porcupine:
-                return self._process_with_porcupine(audio_samples)
+            if self.detection_method == "openwakeword" and self.openwakeword_model:
+                return self._process_with_openwakeword(audio_samples)
             else:
                 return self._process_with_fallback(audio_samples)
                 
@@ -103,43 +109,54 @@ class WakeWordDetector:
                 "wake_word_detected": False,
                 "keyword": None,
                 "confidence": 0.0,
-                "error": str(e)
+                "error": str(e),
+                "detection_method": self.detection_method
             }
     
-    def _process_with_porcupine(self, audio_samples: List[float]) -> Dict[str, Any]:
-        """Process audio using Porcupine."""
-        # Convert to int16 PCM format (Porcupine requirement)
-        audio_int16 = np.array(audio_samples, dtype=np.float32)
-        audio_int16 = (audio_int16 * 32767).astype(np.int16)
+    def _process_with_openwakeword(self, audio_samples: List[float]) -> Dict[str, Any]:
+        """Process audio using openWakeWord."""
+        # Convert to numpy array (openWakeWord requirement)
+        audio_np = np.array(audio_samples, dtype=np.float32)
         
-        # Process in frame chunks
-        results = []
-        for i in range(0, len(audio_int16) - FRAME_LENGTH + 1, FRAME_LENGTH):
-            frame = audio_int16[i:i + FRAME_LENGTH]
-            keyword_index = self.porcupine.process(frame)
+        # openWakeWord expects specific frame sizes, but can handle variable length input
+        # It will internally chunk the audio appropriately
+        try:
+            prediction = self.openwakeword_model.predict(audio_np)
             
-            if keyword_index >= 0:
-                # Wake word detected!
-                keyword_name = self.porcupine.keywords[keyword_index] if hasattr(self.porcupine, 'keywords') else f"keyword_{keyword_index}"
-                results.append({
+            # Find the highest confidence prediction
+            max_confidence = 0.0
+            detected_keyword = None
+            
+            for keyword, confidence in prediction.items():
+                if confidence > max_confidence:
+                    max_confidence = confidence
+                    detected_keyword = keyword
+            
+            # Threshold for detection (tune this based on testing)
+            detection_threshold = 0.5
+            
+            if max_confidence > detection_threshold:
+                return {
                     "wake_word_detected": True,
-                    "keyword": keyword_name,
-                    "confidence": 0.95,  # Porcupine is generally very confident
-                    "frame_index": i,
-                    "detection_method": "porcupine"
-                })
-        
-        if results:
-            # Return the latest detection
-            return results[-1]
-        else:
-            return {
-                "wake_word_detected": False,
-                "keyword": None,
-                "confidence": 0.0,
-                "frames_processed": len(audio_int16) // FRAME_LENGTH,
-                "detection_method": "porcupine"
-            }
+                    "keyword": detected_keyword,
+                    "confidence": max_confidence,
+                    "detection_method": "openwakeword",
+                    "all_predictions": prediction
+                }
+            else:
+                return {
+                    "wake_word_detected": False,
+                    "keyword": None,
+                    "confidence": max_confidence,
+                    "detection_method": "openwakeword",
+                    "all_predictions": prediction
+                }
+                
+        except Exception as e:
+            print(f"ERROR: openWakeWord processing failed: {e}", file=sys.stderr)
+            # Fall back to energy detection
+            return self._process_with_fallback(audio_samples)
+    
     
     def _process_with_fallback(self, audio_samples: List[float]) -> Dict[str, Any]:
         """Fallback keyword detection using simple energy-based patterns."""
@@ -235,7 +252,8 @@ def process_wake_word_request(data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Process the audio
     result = wake_word_detector.process_audio_chunk(audio_samples)
-    result["porcupine_available"] = PORCUPINE_AVAILABLE
+    result["openwakeword_available"] = OPENWAKEWORD_AVAILABLE
+    result["porcupine_available"] = False  # We're not using Porcupine anymore
     
     return result
 

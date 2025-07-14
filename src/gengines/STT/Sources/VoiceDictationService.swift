@@ -1454,6 +1454,8 @@ class VoiceDictationService {
     
     // Phase 4A: Wake Word Detection
     private func runWakeWordDetection(samples: [Float]) {
+        NSLog("🎯 Phase 4A Wake Word: Starting detection with \(samples.count) samples")
+        
         let jsonInput: [String: Any] = [
             "audio_samples": samples
         ]
@@ -1464,6 +1466,8 @@ class VoiceDictationService {
             return
         }
         
+        NSLog("🎯 Phase 4A Wake Word: JSON input created (length: \(jsonString.count))")
+        
         let process = Process()
         process.launchPath = pythonPath
         
@@ -1471,34 +1475,63 @@ class VoiceDictationService {
         let wakeWordDetectorPath: String
         if let bundledPath = Bundle.main.path(forResource: "wake_word_detector", ofType: "py") {
             wakeWordDetectorPath = bundledPath
+            NSLog("🎯 Phase 4A Wake Word: Using bundled script: \(wakeWordDetectorPath)")
         } else {
             wakeWordDetectorPath = FileManager.default.currentDirectoryPath + "/wake_word_detector.py"
+            NSLog("🎯 Phase 4A Wake Word: Using dev script: \(wakeWordDetectorPath)")
         }
         
+        // Check if script exists
+        let scriptExists = FileManager.default.fileExists(atPath: wakeWordDetectorPath)
+        NSLog("🎯 Phase 4A Wake Word: Script exists: \(scriptExists) at \(wakeWordDetectorPath)")
+        
+        // Check if Python exists
+        let pythonExists = FileManager.default.fileExists(atPath: pythonPath)
+        NSLog("🎯 Phase 4A Wake Word: Python exists: \(pythonExists) at \(pythonPath)")
+        
         process.arguments = [wakeWordDetectorPath, jsonString]
+        NSLog("🎯 Phase 4A Wake Word: Command: \(pythonPath) \(wakeWordDetectorPath) [JSON]")
         
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
-        process.terminationHandler = { [weak self] _ in
+        process.terminationHandler = { [weak self] process in
+            NSLog("🎯 Phase 4A Wake Word: Process terminated with status: \(process.terminationStatus)")
+            
             let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
             let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
             
-            if let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !output.isEmpty,
-               let data = output.data(using: .utf8),
-               let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let error = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            
+            NSLog("🎯 Phase 4A Wake Word: Output length: \(output.count)")
+            NSLog("🎯 Phase 4A Wake Word: Error length: \(error.count)")
+            
+            if !output.isEmpty {
+                NSLog("🎯 Phase 4A Wake Word: Raw output: \(output)")
                 
-                self?.handleWakeWordResult(result)
-            } else if let error = String(data: errorData, encoding: .utf8), !error.isEmpty {
-                NSLog("❌ Phase 4A Wake Word Error: \(error)")
+                if let data = output.data(using: .utf8),
+                   let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    NSLog("🎯 Phase 4A Wake Word: Successfully parsed JSON result")
+                    self?.handleWakeWordResult(result)
+                } else {
+                    NSLog("❌ Phase 4A Wake Word: Failed to parse JSON from output: \(output)")
+                }
+            } else {
+                NSLog("❌ Phase 4A Wake Word: No output received")
+            }
+            
+            if !error.isEmpty {
+                NSLog("🎯 Phase 4A Wake Word: Debug/Error output: \(error)")
             }
         }
         
         do {
+            NSLog("🎯 Phase 4A Wake Word: Launching process...")
             try process.run()
+            NSLog("🎯 Phase 4A Wake Word: Process launched successfully")
         } catch {
             NSLog("❌ Phase 4A Wake Word: Failed to run process: \(error)")
         }
@@ -1526,21 +1559,30 @@ class VoiceDictationService {
     
     // Phase 4A: Handle wake word detection results
     private func handleWakeWordResult(_ result: [String: Any]) {
+        NSLog("🎯 Phase 4A Wake Word: Handling result: \(result)")
+        
         guard let wakeWordDetected = result["wake_word_detected"] as? Bool else {
-            NSLog("⚠️ Phase 4A Wake Word: Invalid result format")
+            NSLog("⚠️ Phase 4A Wake Word: Invalid result format - missing 'wake_word_detected' field")
             return
         }
         
         if wakeWordDetected {
             let keyword = result["keyword"] as? String ?? "unknown"
             let confidence = result["confidence"] as? Double ?? 1.0
+            let method = result["detection_method"] as? String ?? "unknown"
             
-            NSLog("🗣️ Phase 4A Wake Word: Detected '\(keyword)' (confidence: \(String(format: "%.2f", confidence)))")
+            NSLog("🗣️ Phase 4A Wake Word: Detected '\(keyword)' (confidence: \(String(format: "%.2f", confidence)), method: \(method))")
             
             // TODO: Trigger hands-free recording
             DispatchQueue.main.async {
                 self.onWakeWordDetected(keyword: keyword, confidence: confidence)
             }
+        } else {
+            let method = result["detection_method"] as? String ?? "unknown"
+            let confidence = result["confidence"] as? Double ?? 0.0
+            let energy = result["energy_db"] as? Double ?? 0.0
+            
+            NSLog("🎯 Phase 4A Wake Word: No wake word detected (method: \(method), confidence: \(String(format: "%.2f", confidence)), energy: \(String(format: "%.1f", energy))dB)")
         }
     }
     
