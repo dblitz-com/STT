@@ -2103,14 +2103,31 @@ class VoiceDictationService {
     private func checkPhase4AAvailability() {
         NSLog("🔍 Checking Phase 4A hands-free components...")
         
-        // Check if VAD processor exists
-        let vadExists = FileManager.default.fileExists(atPath: "vad_processor.py")
+        // Check if VAD processor exists (bundled or development)
+        let vadExists: Bool
+        if let bundledVAD = Bundle.main.path(forResource: "vad_processor", ofType: "py") {
+            vadExists = FileManager.default.fileExists(atPath: bundledVAD)
+            NSLog("🔍 VAD Processor: Checking bundled path: \(bundledVAD)")
+        } else {
+            let devVADPath = FileManager.default.currentDirectoryPath + "/vad_processor.py"
+            vadExists = FileManager.default.fileExists(atPath: devVADPath)
+            NSLog("🔍 VAD Processor: Checking dev path: \(devVADPath)")
+        }
         
-        // Check if wake word detector exists  
-        let wakeWordExists = FileManager.default.fileExists(atPath: "wake_word_detector.py")
+        // Check if wake word detector exists (bundled or development)
+        let wakeWordExists: Bool
+        if let bundledWakeWord = Bundle.main.path(forResource: "wake_word_detector", ofType: "py") {
+            wakeWordExists = FileManager.default.fileExists(atPath: bundledWakeWord)
+            NSLog("🔍 Wake Word Detector: Checking bundled path: \(bundledWakeWord)")
+        } else {
+            let devWakeWordPath = FileManager.default.currentDirectoryPath + "/wake_word_detector.py"
+            wakeWordExists = FileManager.default.fileExists(atPath: devWakeWordPath)
+            NSLog("🔍 Wake Word Detector: Checking dev path: \(devWakeWordPath)")
+        }
         
-        // Check if Python dependencies are available
-        let pythonExists = FileManager.default.fileExists(atPath: "./venv/bin/python")
+        // Check if Python environment exists (same as initialized pythonPath)
+        let pythonExists = FileManager.default.fileExists(atPath: pythonPath)
+        NSLog("🔍 Python Environment: Checking path: \(pythonPath)")
         
         NSLog("📋 Phase 4A Status:")
         NSLog("   VAD Processor: \(vadExists ? "✅ Found" : "❌ Missing")")

@@ -75,6 +75,21 @@ else
     echo "⚠️ Command processor script not found"
 fi
 
+# Copy Phase 4A hands-free components
+if [ -f "vad_processor.py" ]; then
+    cp vad_processor.py "$APP_DIR/Contents/Resources/"
+    echo "✅ Copied VAD processor script to app bundle"
+else
+    echo "⚠️ VAD processor script not found"
+fi
+
+if [ -f "wake_word_detector.py" ]; then
+    cp wake_word_detector.py "$APP_DIR/Contents/Resources/"
+    echo "✅ Copied wake word detector script to app bundle"
+else
+    echo "⚠️ Wake word detector script not found"
+fi
+
 # Sign the app with entitlements (Wispr Flow approach - no sandbox)
 codesign --force --deep --sign - --entitlements STTDictate.entitlements "$APP_DIR"
 
