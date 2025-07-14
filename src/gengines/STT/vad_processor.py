@@ -42,8 +42,11 @@ class SileroVAD:
                 verbose=False
             )
             
-            # Extract utility functions
-            self.get_speech_ts, _, self.read_audio, _, _, _ = self.utils
+            # Extract utility functions (handle different versions)
+            if len(self.utils) >= 6:
+                self.get_speech_ts, _, self.read_audio, _, _, _ = self.utils
+            else:
+                self.get_speech_ts, _, self.read_audio, _, _ = self.utils
             
             self.is_initialized = True
             print("DEBUG: Silero VAD initialized successfully", file=sys.stderr)

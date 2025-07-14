@@ -1365,10 +1365,187 @@ class VoiceDictationService {
         
         NSLog("🎤 Received audio buffer: \(buffer.frameLength) frames, \(channelDataValueArray.count) samples")
         
+        // Phase 4A: Send audio to VAD/wake word detection (when hands-free enabled and not recording)
+        if handsFreeEnabled && !isRecording {
+            processPhase4AAudio(channelDataValueArray)
+        }
+        
         bufferQueue.sync {
             audioBuffer.append(contentsOf: channelDataValueArray)
             NSLog("📊 Total audio buffer size: \(audioBuffer.count) samples")
         }
+    }
+    
+    // Phase 4A: Process audio for VAD and wake word detection
+    private func processPhase4AAudio(_ samples: [Float]) {
+        NSLog("🤖 Phase 4A: Processing \(samples.count) samples for VAD/wake word detection")
+        
+        // Run VAD and wake word detection in parallel (non-blocking)
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.runVADDetection(samples: samples)
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.runWakeWordDetection(samples: samples)
+        }
+    }
+    
+    // Phase 4A: Voice Activity Detection using Silero VAD
+    private func runVADDetection(samples: [Float]) {
+        let jsonInput: [String: Any] = [
+            "audio_samples": samples,
+            "threshold": 0.5,
+            "environment": "office"
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonInput),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            NSLog("❌ Phase 4A VAD: Failed to create JSON input")
+            return
+        }
+        
+        let process = Process()
+        process.launchPath = pythonPath
+        
+        // Use bundled VAD processor if available, otherwise fallback to current directory
+        let vadProcessorPath: String
+        if let bundledPath = Bundle.main.path(forResource: "vad_processor", ofType: "py") {
+            vadProcessorPath = bundledPath
+        } else {
+            vadProcessorPath = FileManager.default.currentDirectoryPath + "/vad_processor.py"
+        }
+        
+        process.arguments = [vadProcessorPath, jsonString]
+        
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        
+        process.terminationHandler = { [weak self] _ in
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            
+            if let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !output.isEmpty,
+               let data = output.data(using: .utf8),
+               let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                
+                self?.handleVADResult(result)
+            } else if let error = String(data: errorData, encoding: .utf8), !error.isEmpty {
+                NSLog("❌ Phase 4A VAD Error: \(error)")
+            }
+        }
+        
+        do {
+            try process.run()
+        } catch {
+            NSLog("❌ Phase 4A VAD: Failed to run process: \(error)")
+        }
+    }
+    
+    // Phase 4A: Wake Word Detection
+    private func runWakeWordDetection(samples: [Float]) {
+        let jsonInput: [String: Any] = [
+            "audio_samples": samples
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonInput),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            NSLog("❌ Phase 4A Wake Word: Failed to create JSON input")
+            return
+        }
+        
+        let process = Process()
+        process.launchPath = pythonPath
+        
+        // Use bundled wake word detector if available, otherwise fallback to current directory
+        let wakeWordDetectorPath: String
+        if let bundledPath = Bundle.main.path(forResource: "wake_word_detector", ofType: "py") {
+            wakeWordDetectorPath = bundledPath
+        } else {
+            wakeWordDetectorPath = FileManager.default.currentDirectoryPath + "/wake_word_detector.py"
+        }
+        
+        process.arguments = [wakeWordDetectorPath, jsonString]
+        
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        
+        process.terminationHandler = { [weak self] _ in
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            
+            if let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !output.isEmpty,
+               let data = output.data(using: .utf8),
+               let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                
+                self?.handleWakeWordResult(result)
+            } else if let error = String(data: errorData, encoding: .utf8), !error.isEmpty {
+                NSLog("❌ Phase 4A Wake Word Error: \(error)")
+            }
+        }
+        
+        do {
+            try process.run()
+        } catch {
+            NSLog("❌ Phase 4A Wake Word: Failed to run process: \(error)")
+        }
+    }
+    
+    // Phase 4A: Handle VAD detection results
+    private func handleVADResult(_ result: [String: Any]) {
+        guard let voiceDetected = result["voice_detected"] as? Bool else {
+            NSLog("⚠️ Phase 4A VAD: Invalid result format")
+            return
+        }
+        
+        if voiceDetected {
+            let confidence = result["confidence"] as? Double ?? 1.0
+            let energyDB = result["energy_db"] as? Double ?? 0.0
+            
+            NSLog("🎤 Phase 4A VAD: Voice detected (confidence: \(String(format: "%.2f", confidence)), energy: \(String(format: "%.1f", energyDB))dB)")
+            
+            // TODO: Trigger recording or wake word detection activation
+            DispatchQueue.main.async {
+                self.onVoiceActivityDetected(confidence: confidence, energyDB: energyDB)
+            }
+        }
+    }
+    
+    // Phase 4A: Handle wake word detection results
+    private func handleWakeWordResult(_ result: [String: Any]) {
+        guard let wakeWordDetected = result["wake_word_detected"] as? Bool else {
+            NSLog("⚠️ Phase 4A Wake Word: Invalid result format")
+            return
+        }
+        
+        if wakeWordDetected {
+            let keyword = result["keyword"] as? String ?? "unknown"
+            let confidence = result["confidence"] as? Double ?? 1.0
+            
+            NSLog("🗣️ Phase 4A Wake Word: Detected '\(keyword)' (confidence: \(String(format: "%.2f", confidence)))")
+            
+            // TODO: Trigger hands-free recording
+            DispatchQueue.main.async {
+                self.onWakeWordDetected(keyword: keyword, confidence: confidence)
+            }
+        }
+    }
+    
+    // Phase 4A: Voice activity detected callback
+    private func onVoiceActivityDetected(confidence: Double, energyDB: Double) {
+        NSLog("🔊 Phase 4A: Voice activity detected (placeholder action)")
+        // Future: Start recording when voice is detected
+    }
+    
+    // Phase 4A: Wake word detected callback
+    private func onWakeWordDetected(keyword: String, confidence: Double) {
+        NSLog("🗣️ Phase 4A: Wake word '\(keyword)' detected (placeholder action)")
+        // Future: Start recording when wake word is detected
     }
     
     private func nonCancellableAsync<T>(_ operation: @escaping () async throws -> T) async throws -> T {
@@ -1984,6 +2161,10 @@ class VoiceDictationService {
     func disableHandsFreeMode() {
         handsFreeEnabled = false
         NSLog("🔇 Hands-free mode DISABLED")
+    }
+    
+    func isHandsFreeEnabled() -> Bool {
+        return handsFreeEnabled
     }
     
     func getPhase4AStatus() -> String {

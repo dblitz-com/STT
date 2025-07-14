@@ -154,6 +154,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self  // Critical: Set target explicitly
         menu.addItem(toggleItem)
         
+        let handsFreeItem = NSMenuItem(title: "🤖 Enable Hands-Free Mode", action: #selector(toggleHandsFree), keyEquivalent: "")
+        handsFreeItem.target = self  // Critical: Set target explicitly
+        menu.addItem(handsFreeItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
         let testItem = NSMenuItem(title: "Test Microphone", action: #selector(testMicrophone), keyEquivalent: "")
         testItem.target = self  // Critical: Set target explicitly
         menu.addItem(testItem)
@@ -215,6 +221,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Silent operation - just toggle recording without popups
         dictationService?.toggleRecording()
+    }
+    
+    @objc func toggleHandsFree() {
+        NSLog("🤖 Menu: Toggle Hands-Free clicked")
+        
+        guard let dictationService = dictationService else {
+            NSLog("❌ Dictation service not available")
+            return
+        }
+        
+        // Get current hands-free status
+        let currentlyEnabled = dictationService.isHandsFreeEnabled()
+        
+        if currentlyEnabled {
+            dictationService.disableHandsFreeMode()
+            NSLog("🔇 Hands-free mode disabled")
+            updateHandsFreeMenuItem(enabled: false)
+        } else {
+            dictationService.enableHandsFreeMode() 
+            NSLog("🔊 Hands-free mode enabled")
+            updateHandsFreeMenuItem(enabled: true)
+        }
+    }
+    
+    private func updateHandsFreeMenuItem(enabled: Bool) {
+        DispatchQueue.main.async {
+            if let menu = self.statusItem?.menu {
+                for item in menu.items {
+                    if item.action == #selector(self.toggleHandsFree) {
+                        item.title = enabled ? "🔇 Disable Hands-Free Mode" : "🤖 Enable Hands-Free Mode"
+                        break
+                    }
+                }
+            }
+        }
     }
     
     @objc func testMicrophone() {
