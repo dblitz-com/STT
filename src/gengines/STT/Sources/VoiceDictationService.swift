@@ -21,6 +21,7 @@ class VoiceDictationService {
     // Phase 4A: Hands-free status (no audio changes yet)
     private var phase4AAvailable = false
     private var handsFreeEnabled = false
+    private var lastPhase4AProcessTime: Double = 0.0
     
     // Event tap for Fn key
     private var eventTap: CFMachPort?
@@ -1376,9 +1377,16 @@ class VoiceDictationService {
         }
     }
     
-    // Phase 4A: Process audio for VAD and wake word detection
+    // Phase 4A: Process audio for VAD and wake word detection (with throttling)
     private func processPhase4AAudio(_ samples: [Float]) {
-        NSLog("🤖 Phase 4A: Processing \(samples.count) samples for VAD/wake word detection")
+        // PERFORMANCE FIX: Only process every 2 seconds to prevent system overload
+        let currentTime = Date().timeIntervalSince1970
+        if currentTime - lastPhase4AProcessTime < 2.0 {
+            return // Skip processing to prevent CPU overload
+        }
+        lastPhase4AProcessTime = currentTime
+        
+        NSLog("🤖 Phase 4A: Processing \(samples.count) samples for VAD/wake word detection (throttled)")
         
         // Run VAD and wake word detection in parallel (non-blocking)
         DispatchQueue.global(qos: .userInitiated).async {
