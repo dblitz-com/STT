@@ -23,6 +23,11 @@ class VoiceDictationService {
     private var handsFreeEnabled = false
     private var lastPhase4AProcessTime: Double = 0.0
     
+    // Phase 4A: Wake word audio buffer management
+    private var wakeWordAudioBuffer: [Float] = []
+    private let wakeWordBufferMaxSamples = Int(16000 * 2.0)  // 32,000 samples for 2s @ 16kHz
+    private let wakeWordMinSamples = Int(16000 * 1.0)  // 16,000 samples minimum for reliable detection
+    
     // Event tap for Fn key
     private var eventTap: CFMachPort?
     private var lastFlags: CGEventFlags = CGEventFlags()
@@ -1377,8 +1382,16 @@ class VoiceDictationService {
         }
     }
     
-    // Phase 4A: Process audio for VAD and wake word detection (with throttling)
+    // Phase 4A: Process audio for VAD and wake word detection (with buffer accumulation)
     private func processPhase4AAudio(_ samples: [Float]) {
+        // FIXED: Accumulate samples for wake word detection (typically 1600 samples = 0.1s)
+        wakeWordAudioBuffer.append(contentsOf: samples)
+        
+        // Maintain sliding window: Keep only the latest max samples to prevent unbounded growth
+        if wakeWordAudioBuffer.count > wakeWordBufferMaxSamples {
+            wakeWordAudioBuffer = Array(wakeWordAudioBuffer.suffix(wakeWordBufferMaxSamples))
+        }
+        
         // PERFORMANCE FIX: Only process every 2 seconds to prevent system overload
         let currentTime = Date().timeIntervalSince1970
         if currentTime - lastPhase4AProcessTime < 2.0 {
@@ -1386,15 +1399,20 @@ class VoiceDictationService {
         }
         lastPhase4AProcessTime = currentTime
         
-        NSLog("🤖 Phase 4A: Processing \(samples.count) samples for VAD/wake word detection (throttled)")
+        NSLog("🤖 Phase 4A: Processing accumulated buffer (\(wakeWordAudioBuffer.count) samples) for VAD/wake word detection")
         
-        // Run VAD and wake word detection in parallel (non-blocking)
+        // Run VAD with current chunk (keep existing behavior for real-time feedback)
         DispatchQueue.global(qos: .userInitiated).async {
             self.runVADDetection(samples: samples)
         }
         
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.runWakeWordDetection(samples: samples)
+        // FIXED: Run wake word detection with accumulated buffer if sufficient audio
+        if wakeWordAudioBuffer.count >= wakeWordMinSamples {
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.runWakeWordDetection(samples: self.wakeWordAudioBuffer)
+            }
+        } else {
+            NSLog("🎯 Phase 4A Wake Word: Buffer too small (\(wakeWordAudioBuffer.count) < \(wakeWordMinSamples)), waiting for more audio")
         }
     }
     

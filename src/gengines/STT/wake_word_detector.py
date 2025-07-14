@@ -114,13 +114,20 @@ class WakeWordDetector:
             }
     
     def _process_with_openwakeword(self, audio_samples: List[float]) -> Dict[str, Any]:
-        """Process audio using openWakeWord."""
-        # Convert to numpy array (openWakeWord requirement)
-        audio_np = np.array(audio_samples, dtype=np.float32)
+        """Process audio using openWakeWord with proper format conversion."""
+        # FIXED: Convert float32 (-1.0 to 1.0) to int16 PCM (expected by openWakeWord)
+        audio_np = (np.array(audio_samples, dtype=np.float32) * 32767).astype(np.int16)
         
-        # openWakeWord expects specific frame sizes, but can handle variable length input
-        # It will internally chunk the audio appropriately
+        # Ensure minimum length: Pad with silence (zeros) if too short
+        min_samples = 16000  # 1 second @ 16kHz
+        if len(audio_np) < min_samples:
+            print(f"DEBUG: Padding audio from {len(audio_np)} to {min_samples} samples", file=sys.stderr)
+            audio_np = np.pad(audio_np, (0, min_samples - len(audio_np)), mode='constant')
+        
+        print(f"DEBUG: Processing {len(audio_np)} samples ({len(audio_np)/16000:.1f}s) with openWakeWord", file=sys.stderr)
+        
         try:
+            # Run inference with properly formatted audio
             prediction = self.openwakeword_model.predict(audio_np)
             
             # Find the highest confidence prediction
@@ -132,16 +139,22 @@ class WakeWordDetector:
                     max_confidence = confidence
                     detected_keyword = keyword
             
+            # Debug logging for confidence analysis
+            print(f"DEBUG: Prediction results: {prediction}", file=sys.stderr)
+            print(f"DEBUG: Max confidence: {max_confidence} for keyword: {detected_keyword}", file=sys.stderr)
+            
             # Threshold for detection (tune this based on testing)
-            detection_threshold = 0.5
+            detection_threshold = 0.2  # Start conservative, adjust based on results
             
             if max_confidence > detection_threshold:
+                print(f"DEBUG: WAKE WORD DETECTED! '{detected_keyword}' with confidence {max_confidence}", file=sys.stderr)
                 return {
                     "wake_word_detected": True,
                     "keyword": detected_keyword,
                     "confidence": max_confidence,
                     "detection_method": "openwakeword",
-                    "all_predictions": prediction
+                    "all_predictions": prediction,
+                    "audio_length_seconds": len(audio_np) / 16000
                 }
             else:
                 return {
@@ -149,11 +162,13 @@ class WakeWordDetector:
                     "keyword": None,
                     "confidence": max_confidence,
                     "detection_method": "openwakeword",
-                    "all_predictions": prediction
+                    "all_predictions": prediction,
+                    "audio_length_seconds": len(audio_np) / 16000
                 }
                 
         except Exception as e:
             print(f"ERROR: openWakeWord processing failed: {e}", file=sys.stderr)
+            print(f"ERROR: Audio shape: {audio_np.shape}, dtype: {audio_np.dtype}", file=sys.stderr)
             # Fall back to energy detection
             return self._process_with_fallback(audio_samples)
     
