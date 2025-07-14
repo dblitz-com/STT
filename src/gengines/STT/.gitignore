@@ -18,3 +18,16 @@ Models/
 # Logs
 *.log
 *.err
+
+# Virtual environments
+venv/
+venv_py312/
+
+# Built app bundles
+Zeus_STT.app/
+Zeus_STT Dev.app/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo

@@ -9,11 +9,31 @@ import json
 import numpy as np
 from typing import Optional, List, Dict, Any
 
+# Import TFLite compatibility wrapper before openWakeWord
+try:
+    import tflite_compat
+except:
+    pass
+
+# Try to import TensorFlow Lite first (preferred)
+try:
+    import tensorflow.lite as tflite
+    TFLITE_AVAILABLE = True
+    print("DEBUG: TensorFlow Lite available via TensorFlow!", file=sys.stderr)
+except ImportError:
+    try:
+        import tflite_runtime.interpreter as tflite
+        TFLITE_AVAILABLE = True
+        print("DEBUG: TensorFlow Lite available via tflite_runtime", file=sys.stderr)
+    except ImportError:
+        TFLITE_AVAILABLE = False
+        print("DEBUG: TensorFlow Lite not available", file=sys.stderr)
+
 # Try to import openWakeWord (primary solution)
 try:
     from openwakeword.model import Model as OpenWakeWordModel
     OPENWAKEWORD_AVAILABLE = True
-    print("DEBUG: openWakeWord available", file=sys.stderr)
+    print(f"DEBUG: openWakeWord available (TFLite: {TFLITE_AVAILABLE})", file=sys.stderr)
 except Exception as e:
     OPENWAKEWORD_AVAILABLE = False
     print(f"DEBUG: openWakeWord not available: {e}", file=sys.stderr)
@@ -59,12 +79,12 @@ class WakeWordDetector:
         # Try openWakeWord first (primary method)
         if OPENWAKEWORD_AVAILABLE:
             try:
-                # Use alexa as temporary wake word (similar to "Zeus" phonetically)
+                # Use hey_jarvis as temporary wake word (similar to "hey Zeus")
                 # Later we'll train a custom "Zeus" model
-                self.openwakeword_model = OpenWakeWordModel(wakeword_models=['alexa'])
+                self.openwakeword_model = OpenWakeWordModel(wakeword_models=['hey_jarvis'])
                 self.detection_method = "openwakeword"
                 self.is_initialized = True
-                print("DEBUG: openWakeWord initialized with 'alexa' model (temp for Zeus)", file=sys.stderr)
+                print("DEBUG: openWakeWord initialized with 'hey_jarvis' model (temp for Zeus)", file=sys.stderr)
                 return
             except Exception as e:
                 print(f"DEBUG: openWakeWord initialization failed: {e}", file=sys.stderr)
@@ -124,11 +144,25 @@ class WakeWordDetector:
             print(f"DEBUG: Padding audio from {len(audio_np)} to {min_samples} samples", file=sys.stderr)
             audio_np = np.pad(audio_np, (0, min_samples - len(audio_np)), mode='constant')
         
+        # Enhanced diagnostics
         print(f"DEBUG: Processing {len(audio_np)} samples ({len(audio_np)/16000:.1f}s) with openWakeWord", file=sys.stderr)
+        print(f"DEBUG: Audio stats - shape: {audio_np.shape}, dtype: {audio_np.dtype}, min: {audio_np.min()}, max: {audio_np.max()}, mean: {audio_np.mean():.2f}", file=sys.stderr)
+        
+        # Check if audio has actual content (not silence)
+        audio_energy = np.sqrt(np.mean(audio_np.astype(np.float32)**2))
+        print(f"DEBUG: Audio RMS energy: {audio_energy:.2f} (silence ~0, speech ~1000+)", file=sys.stderr)
         
         try:
             # Run inference with properly formatted audio
             prediction = self.openwakeword_model.predict(audio_np)
+            
+            # Try to get raw scores if available
+            try:
+                if hasattr(self.openwakeword_model, 'predict_with_raw_scores'):
+                    raw_scores = self.openwakeword_model.predict_with_raw_scores(audio_np)
+                    print(f"DEBUG: Raw scores available: {raw_scores}", file=sys.stderr)
+            except:
+                pass
             
             # Find the highest confidence prediction
             max_confidence = 0.0
@@ -142,9 +176,12 @@ class WakeWordDetector:
             # Debug logging for confidence analysis
             print(f"DEBUG: Prediction results: {prediction}", file=sys.stderr)
             print(f"DEBUG: Max confidence: {max_confidence} for keyword: {detected_keyword}", file=sys.stderr)
+            print(f"DEBUG: TFLite backend: {TFLITE_AVAILABLE}, Inference framework: {getattr(self.openwakeword_model, 'inference_framework', 'unknown')}", file=sys.stderr)
             
             # Threshold for detection (tune this based on testing)
-            detection_threshold = 0.2  # Start conservative, adjust based on results
+            # NOTE: On macOS ARM64, confidence scores are much lower than expected
+            # Typical scores: 0.0001 - 0.002 for speech
+            detection_threshold = 0.0005  # Much lower for macOS ARM64
             
             if max_confidence > detection_threshold:
                 print(f"DEBUG: WAKE WORD DETECTED! '{detected_keyword}' with confidence {max_confidence}", file=sys.stderr)

@@ -88,7 +88,7 @@ class VoiceDictationService {
            FileManager.default.fileExists(atPath: resourcePath + "/venv/bin/python") {
             self.pythonPath = resourcePath + "/venv/bin/python"
         } else {
-            self.pythonPath = currentDir + "/venv/bin/python"
+            self.pythonPath = currentDir + "/venv_py312/bin/python"
         }
         
         if let scriptPath = Bundle.main.path(forResource: "ai_editor", ofType: "py") {
