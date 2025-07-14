@@ -18,6 +18,10 @@ class VoiceDictationService {
     private let bufferLock = NSLock()
     private let bufferQueue = DispatchQueue(label: "com.stt.audiobuffer")
     
+    // Phase 4A: Hands-free status (no audio changes yet)
+    private var phase4AAvailable = false
+    private var handsFreeEnabled = false
+    
     // Event tap for Fn key
     private var eventTap: CFMachPort?
     private var lastFlags: CGEventFlags = CGEventFlags()
@@ -1938,9 +1942,58 @@ class VoiceDictationService {
         
         if vadExists && wakeWordExists && pythonExists {
             NSLog("🚀 Phase 4A components ready for integration")
+            phase4AAvailable = true
+            initializePhase4AVariables()
         } else {
             NSLog("⚠️ Phase 4A components incomplete - hands-free features disabled")
+            phase4AAvailable = false
         }
+    }
+    
+    // MARK: - Phase 4A Initialization (Step 2 - Variables Only)
+    
+    private func initializePhase4AVariables() {
+        NSLog("🚀 Initializing Phase 4A variables (no audio changes)...")
+        
+        // Start with hands-free disabled by default
+        handsFreeEnabled = false
+        
+        NSLog("✅ Phase 4A variables initialized")
+        NSLog("🔇 Hands-free mode: DISABLED (can be enabled later)")
+        
+        // Log available functions
+        NSLog("📋 Phase 4A functions available:")
+        NSLog("   - enableHandsFreeMode() - Enable continuous listening")
+        NSLog("   - disableHandsFreeMode() - Disable continuous listening") 
+        NSLog("   - getPhase4AStatus() - Get current status")
+    }
+    
+    // MARK: - Phase 4A Control Functions (Step 2 - Logging Only)
+    
+    func enableHandsFreeMode() {
+        guard phase4AAvailable else {
+            NSLog("❌ Cannot enable hands-free mode - Phase 4A components not available")
+            return
+        }
+        
+        handsFreeEnabled = true
+        NSLog("🔊 Hands-free mode ENABLED (placeholder - no audio changes yet)")
+        NSLog("🎯 Future: Will enable continuous VAD and wake word detection")
+    }
+    
+    func disableHandsFreeMode() {
+        handsFreeEnabled = false
+        NSLog("🔇 Hands-free mode DISABLED")
+    }
+    
+    func getPhase4AStatus() -> String {
+        return """
+        Phase 4A Status:
+        - Components Available: \(phase4AAvailable ? "YES" : "NO")
+        - Hands-Free Enabled: \(handsFreeEnabled ? "YES" : "NO")
+        - Current Mode: \(isRecording ? "Recording" : "Idle")
+        - Audio Engine: \(audioEngine.isRunning ? "Running" : "Stopped")
+        """
     }
 }
 
