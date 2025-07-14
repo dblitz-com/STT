@@ -1037,6 +1037,11 @@ class VoiceDictationService {
             // Update visual feedback
             AppDelegate.shared?.updateRecordingState(isRecording: true)
             
+            // Show listening popup
+            DispatchQueue.main.async {
+                listeningPopup.show()
+            }
+            
             // Play Apple dictation begin sound
             dictationBeginSound?.play()
             
@@ -1123,6 +1128,11 @@ class VoiceDictationService {
             // Update visual feedback to show error
             AppDelegate.shared?.updateRecordingState(isRecording: false)
             
+            // Hide listening popup on error
+            DispatchQueue.main.async {
+                listeningPopup.hide()
+            }
+            
             NSLog("❌ Failed to start audio recording: \(error.localizedDescription)")
         }
     }
@@ -1165,6 +1175,11 @@ class VoiceDictationService {
         
         // Update visual feedback
         AppDelegate.shared?.updateRecordingState(isRecording: false)
+        
+        // Hide listening popup
+        DispatchQueue.main.async {
+            listeningPopup.hide()
+        }
         
         // Play Apple dictation confirm sound
         dictationConfirmSound?.play()
