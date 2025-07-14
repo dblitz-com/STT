@@ -2,18 +2,18 @@
 
 set -e
 
-echo "🔨 Building STT Dictate.app..."
+echo "🔨 Building Zeus_STT.app..."
 
-# Kill any existing STT Dictate instances
-echo "🔫 Killing any existing STT Dictate instances..."
-pkill -f "STT Dictate" || true
+# Kill any existing Zeus_STT instances
+echo "🔫 Killing any existing Zeus_STT instances..."
+pkill -f "Zeus_STT" || true
 sleep 0.5  # Give it time to fully quit
 
 # Build the Swift package
 swift build -c release
 
 # Create app bundle structure
-APP_NAME="STT Dictate"
+APP_NAME="Zeus_STT"
 APP_DIR="$APP_NAME.app"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
@@ -24,6 +24,19 @@ cp .build/release/STTDictate "$APP_DIR/Contents/MacOS/"
 
 # Copy Info.plist
 cp Info.plist "$APP_DIR/Contents/"
+
+# Generate and copy Zeus_STT lightning bolt icon
+if [ -f "generate_icon.swift" ]; then
+    swift generate_icon.swift
+    if [ -f "Zeus_STT.icns" ]; then
+        cp Zeus_STT.icns "$APP_DIR/Contents/Resources/"
+        echo "⚡ Copied Zeus_STT lightning bolt .icns icon"
+    else
+        echo "⚠️ Zeus_STT.icns generation failed"
+    fi
+else
+    echo "⚠️ Icon generator script not found"
+fi
 
 # Copy WhisperKit models
 if [ -d "WhisperKit/Models" ]; then

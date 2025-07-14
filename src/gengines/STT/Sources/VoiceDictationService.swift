@@ -663,7 +663,7 @@ class VoiceDictationService {
     private func resetTCCDatabase() -> Bool {
         let task = Process()
         task.launchPath = "/usr/bin/tccutil"
-        task.arguments = ["reset", "Accessibility", "com.stt.dictate"]
+        task.arguments = ["reset", "Accessibility", "com.zeus.stt"]
         
         do {
             try task.run()

@@ -7,11 +7,13 @@
     <key>CFBundleExecutable</key>
     <string>STTDictate</string>
     <key>CFBundleIdentifier</key>
-    <string>com.stt.dictate</string>
+    <string>com.zeus.stt</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>STT Dictate</string>
+    <string>Zeus_STT</string>
+    <key>CFBundleIconFile</key>
+    <string>Zeus_STT</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -29,10 +31,10 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>STT Dictate needs microphone access to transcribe your speech.</string>
+    <string>Zeus_STT needs microphone access to transcribe your speech.</string>
     <key>NSInputMonitoringUsageDescription</key>
-    <string>STT Dictate needs to monitor keyboard input to detect the Fn key for dictation toggle.</string>
+    <string>Zeus_STT needs to monitor keyboard input to detect the Fn key for dictation toggle.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>STT Dictate needs accessibility access to insert transcribed text into any application.</string>
+    <string>Zeus_STT needs accessibility access to insert transcribed text into any application.</string>
 </dict>
 </plist>

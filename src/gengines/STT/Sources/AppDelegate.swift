@@ -20,9 +20,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     button.title = "🔴"
                 }
-                button.toolTip = "STT Dictate - Recording... (Press Fn to stop)"
+                button.toolTip = "Zeus_STT - Recording... (Press Fn to stop)"
                 NSLog("🔴 RECORDING STATE: ON")
-                self.showNotification(title: "STT Dictate", message: "🔴 Recording started - Press Fn to stop")
+                self.showNotification(title: "Zeus_STT", message: "🔴 Recording started - Press Fn to stop")
             } else {
                 // Idle: Yellow lightning bolt
                 if let idleImage = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Ready") {
@@ -32,9 +32,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     button.title = "⚡"
                 }
-                button.toolTip = "STT Dictate - Press Fn to toggle"
+                button.toolTip = "Zeus_STT - Press Fn to toggle"
                 NSLog("⚡ RECORDING STATE: OFF")
-                self.showNotification(title: "STT Dictate", message: "⚡ Recording stopped")
+                self.showNotification(title: "Zeus_STT", message: "⚡ Recording stopped")
             }
             
             button.needsDisplay = true
@@ -71,7 +71,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             
             // Show notification
-            self.showNotification(title: "⚡ Fn Key Detected!", message: "STT Dictate received Fn key press")
+            self.showNotification(title: "⚡ Fn Key Detected!", message: "Zeus_STT received Fn key press")
             
             NSLog("💚 Fn KEY VISUAL FEEDBACK TRIGGERED")
         }
@@ -90,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
     
     private func isAnotherInstanceRunning() -> Bool {
-        let bundleId = Bundle.main.bundleIdentifier ?? "com.stt.dictate"
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.zeus.stt"
         let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
         
         NSLog("🔍 Bundle ID: \(bundleId)")
@@ -107,7 +107,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Check if another instance is already running
         if isAnotherInstanceRunning() {
-            NSLog("⚠️ Another instance of STT Dictate is already running - silently quitting")
+            NSLog("⚠️ Another instance of Zeus_STT is already running - silently quitting")
             NSApp.terminate(nil)
             return
         }
@@ -131,7 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.title = "⚡"
             NSLog("✅ Button configured with lightning emoji")
             
-            button.toolTip = "STT Dictate - Press Fn to toggle"
+            button.toolTip = "Zeus_STT - Press Fn to toggle"
             
             // Force refresh
             button.needsDisplay = true
@@ -147,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create menu
         NSLog("🔨 Creating menu...")
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "STT Dictate v1.0", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Zeus_STT v1.0", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         
         let toggleItem = NSMenuItem(title: "Toggle Dictation (Fn)", action: #selector(toggleDictation), keyEquivalent: "")
@@ -191,7 +191,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("🔨 Initializing dictation service...")
         dictationService?.initializeAfterLaunch()
         
-        NSLog("✅ STT Dictate initialized after app launch")
+        NSLog("✅ Zeus_STT initialized after app launch")
         NSLog("🎯 Press Fn key to toggle dictation")
         NSLog("🎤 Menu bar icon should now be visible!")
         
@@ -201,7 +201,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         dictationService?.disableFnTap()
-        print("👋 STT Dictate terminated")
+        print("👋 Zeus_STT terminated")
     }
     
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
@@ -301,13 +301,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // Red lightning bolt when recording
                     if let recordImage = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Recording") {
                         button.image = recordImage
-                        button.toolTip = "STT Dictate - Recording... (Press Fn to stop)"
+                        button.toolTip = "Zeus_STT - Recording... (Press Fn to stop)"
                     }
                 } else {
                     // Normal lightning bolt when not recording
                     if let normalImage = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "STT") {
                         button.image = normalImage
-                        button.toolTip = "STT Dictate - Press Fn to toggle"
+                        button.toolTip = "Zeus_STT - Press Fn to toggle"
                     }
                 }
             }

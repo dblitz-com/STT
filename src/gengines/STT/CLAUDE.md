@@ -1,6 +1,6 @@
-# STT Dictate - Claude Development Notes
+# Zeus_STT - Claude Development Notes
 
-## Project Overview
+## Project Overview  
 Open-source voice-to-text system for Mac that intercepts the Fn key to toggle dictation, preventing the emoji picker and providing universal text insertion across all applications.
 
 ## Key Requirements
@@ -18,8 +18,8 @@ During development, macOS Sequoia has a TCC (Transparency, Consent, and Control)
 When you see character-by-character typing instead of instant text insertion:
 
 1. **System Settings → Privacy & Security → Accessibility**
-2. **Remove** STT Dictate (uncheck + click [-])
-3. **Re-add** STT Dictate (click [+], select `/Applications/STT Dictate.app`)
+2. **Remove** Zeus_STT (uncheck + click [-])
+3. **Re-add** Zeus_STT (click [+], select `/Applications/Zeus_STT.app`)
 4. **Enable** the checkbox
 
 That's it! This clears the TCC cache and restores instant text insertion.
@@ -118,7 +118,7 @@ hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x70
 ```bash
 ./setup.sh                        # Install dependencies and download models
 ./build-app.sh                     # Build macOS app bundle
-mv "STT Dictate.app" /Applications/
+mv "Zeus_STT.app" /Applications/
 ./install-service.sh               # Install as background service (optional)
 ```
 
@@ -131,14 +131,14 @@ mv "STT Dictate.app" /Applications/
 #### Production vs Development Apps
 ```bash
 # Production (daily use)
-./build-app.sh                  # Build "STT Dictate.app"
-mv "STT Dictate.app" /Applications/
-# Bundle ID: com.stt.dictate
+./build-app.sh                  # Build "Zeus_STT.app"
+mv "Zeus_STT.app" /Applications/
+# Bundle ID: com.zeus.stt
 
 # Development (testing changes)
-./build-dev.sh                  # Build "STT Dictate Dev.app" 
-mv "STT Dictate Dev.app" /Applications/
-# Bundle ID: com.stt.dictate.dev (separate permissions)
+./build-dev.sh                  # Build "Zeus_STT Dev.app" 
+mv "Zeus_STT Dev.app" /Applications/
+# Bundle ID: com.zeus.stt.dev (separate permissions)
 ```
 
 #### Development Safety Features
@@ -227,7 +227,7 @@ The app provides extensive logging for troubleshooting:
 
 ## 🤖 AI Enhancement Research - Wispr Flow Analysis
 
-*Research conducted to identify features needed to transform STT Dictate from basic dictation into an intelligent, context-aware voice-to-text system that rivals Wispr Flow.*
+*Research conducted to identify features needed to transform Zeus_STT from basic dictation into an intelligent, context-aware voice-to-text system that rivals Wispr Flow.*
 
 ### 1. AI-Powered Auto-Edits & Real-Time Formatting
 
@@ -241,7 +241,7 @@ Wispr Flow's auto-edits transform raw speech into polished text by removing fill
 
 - **Pipeline Approach**: It's a transcribe-then-edit pipeline: Raw audio is transcribed via cloud STT (likely proprietary or enhanced Whisper-like model), then passed to a fine-tuned LLM for enhancement. Real-time processing uses streaming ASR (automatic speech recognition) with incremental updates, achieving <700ms end-to-end latency via optimized inference engines like TensorRT-LLM on AWS.
 
-**Recommended Implementation for STT Dictate**:
+**Recommended Implementation for Zeus_STT**:
 - **Approach/Models**: Integrate your WhisperKit STT with a local or cloud LLM for post-processing. Use open-source Llama 3.1 (fine-tune on datasets like Common Voice for disfluencies) via libraries like Hugging Face Transformers or llama.cpp for on-device inference. Prompt example: "Refine this transcript: remove fillers, correct grammar, add punctuation [transcript]."
 - **Architecture**: Stream audio to WhisperKit → Buffer transcript chunks → Feed to LLM → Insert edited text at cursor. For real-time, use asyncio in Python for parallel processing.
 - **Priorities/Complexity**: Start with filler removal (low complexity, regex + LLM). Add grammar/punctuation (medium, requires fine-tuning). High priority for core UX; estimate 2-4 weeks with existing WhisperKit.
