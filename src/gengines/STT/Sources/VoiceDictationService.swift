@@ -99,6 +99,9 @@ class VoiceDictationService {
         NSLog("🤖 AI Editor initialized: python=\(pythonPath), script=\(aiEditorScriptPath)")
         NSLog("🎯 Command Processor initialized: script=\(commandProcessorPath)")
         
+        // Phase 4A: Check if hands-free components are available
+        checkPhase4AAvailability()
+        
         checkAccessibilityPermissions()
         setupWhisperKit()
         setupDictationSounds()
@@ -1912,6 +1915,32 @@ class VoiceDictationService {
         event?.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
         
         return event
+    }
+    
+    // MARK: - Phase 4A Availability Check
+    
+    private func checkPhase4AAvailability() {
+        NSLog("🔍 Checking Phase 4A hands-free components...")
+        
+        // Check if VAD processor exists
+        let vadExists = FileManager.default.fileExists(atPath: "vad_processor.py")
+        
+        // Check if wake word detector exists  
+        let wakeWordExists = FileManager.default.fileExists(atPath: "wake_word_detector.py")
+        
+        // Check if Python dependencies are available
+        let pythonExists = FileManager.default.fileExists(atPath: "./venv/bin/python")
+        
+        NSLog("📋 Phase 4A Status:")
+        NSLog("   VAD Processor: \(vadExists ? "✅ Found" : "❌ Missing")")
+        NSLog("   Wake Word Detector: \(wakeWordExists ? "✅ Found" : "❌ Missing")")
+        NSLog("   Python Environment: \(pythonExists ? "✅ Found" : "❌ Missing")")
+        
+        if vadExists && wakeWordExists && pythonExists {
+            NSLog("🚀 Phase 4A components ready for integration")
+        } else {
+            NSLog("⚠️ Phase 4A components incomplete - hands-free features disabled")
+        }
     }
 }
 
