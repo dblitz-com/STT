@@ -2171,13 +2171,117 @@ class VoiceDictationService {
         }
         
         handsFreeEnabled = true
-        NSLog("🔊 Hands-free mode ENABLED (placeholder - no audio changes yet)")
-        NSLog("🎯 Future: Will enable continuous VAD and wake word detection")
+        NSLog("🔊 Hands-free mode ENABLED - Starting continuous audio monitoring")
+        
+        // Start continuous audio engine for hands-free listening
+        startContinuousAudioForHandsFree()
     }
     
     func disableHandsFreeMode() {
         handsFreeEnabled = false
-        NSLog("🔇 Hands-free mode DISABLED")
+        NSLog("🔇 Hands-free mode DISABLED - Stopping continuous audio monitoring")
+        
+        // Stop continuous audio engine 
+        stopContinuousAudioForHandsFree()
+    }
+    
+    // Phase 4A: Start continuous audio monitoring for hands-free mode
+    private func startContinuousAudioForHandsFree() {
+        guard !audioEngine.isRunning else {
+            NSLog("🎤 Audio engine already running - hands-free mode will piggyback on existing stream")
+            return
+        }
+        
+        NSLog("🎤 Setting up audio engine for hands-free monitoring...")
+        
+        do {
+            // Reset audio engine if needed
+            if audioEngine.isRunning {
+                audioEngine.stop()
+                NSLog("🔄 Stopped existing audio engine")
+            }
+            
+            // Reset the audio engine to clear any previous configuration
+            audioEngine.reset()
+            NSLog("🔄 Audio engine reset for hands-free mode")
+            
+            let inputNode = audioEngine.inputNode
+            NSLog("📋 Input node format: \(inputNode.inputFormat(forBus: 0))")
+            
+            // Use the input node's native format instead of forcing our own
+            let inputFormat = inputNode.inputFormat(forBus: 0)
+            
+            // Create a compatible format for processing (16kHz, mono, float32)
+            let targetFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sampleRate,  // 16000 Hz
+                channels: 1,
+                interleaved: false
+            )!
+            
+            // Remove any existing tap to prevent conflicts
+            inputNode.removeTap(onBus: 0)
+            NSLog("🗑️ Removed any existing audio tap")
+            
+            // Install tap with input node's native format for hands-free processing
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+                guard let self = self else { return }
+                
+                // Convert to target format if needed
+                if inputFormat.sampleRate != self.sampleRate || inputFormat.channelCount != 1 {
+                    // Convert format asynchronously to avoid blocking the audio thread
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        if let convertedBuffer = self.convertAudioBuffer(buffer, from: inputFormat, to: targetFormat) {
+                            self.processAudioBuffer(convertedBuffer)
+                        }
+                    }
+                } else {
+                    // Direct processing if formats match
+                    self.processAudioBuffer(buffer)
+                }
+            }
+            
+            NSLog("✅ Audio tap installed for hands-free mode")
+            
+            // Prepare and start the audio engine
+            NSLog("🔧 Preparing audio engine...")
+            audioEngine.prepare()
+            NSLog("✅ Audio engine prepared")
+            
+            NSLog("🚀 Starting audio engine for continuous monitoring...")
+            try audioEngine.start()
+            NSLog("✅ Continuous audio monitoring active - isRunning: \(audioEngine.isRunning)")
+            NSLog("🎯 Listening for wake words: 'computer', 'hey google'")
+            
+        } catch {
+            NSLog("❌ Failed to start audio engine for hands-free mode: \(error)")
+        }
+    }
+    
+    // Phase 4A: Stop continuous audio monitoring
+    private func stopContinuousAudioForHandsFree() {
+        // Only stop if we're not actively recording
+        guard !isRecording else {
+            NSLog("🎤 Audio engine busy with recording - will stop after recording ends")
+            return
+        }
+        
+        // Only stop if no other features need the audio engine
+        guard audioEngine.isRunning else { 
+            NSLog("🎤 Audio engine already stopped")
+            return 
+        }
+        
+        NSLog("🎤 Stopping continuous audio monitoring...")
+        
+        // Remove audio tap
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+        NSLog("🗑️ Removed audio tap for hands-free mode")
+        
+        // Stop audio engine
+        audioEngine.stop()
+        NSLog("✅ Continuous audio monitoring stopped")
     }
     
     func isHandsFreeEnabled() -> Bool {
