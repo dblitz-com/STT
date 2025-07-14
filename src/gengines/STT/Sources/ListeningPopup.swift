@@ -79,25 +79,30 @@ struct ListeningView: View {
     
     var body: some View {
         ZStack {
-            // Semi-transparent dark background
+            // True glass effect with layered approach from research
+            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                .opacity(0.95)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+            
+            // Subtle white tint for glass appearance
             RoundedRectangle(cornerRadius: 20)
-                .fill(Color.black.opacity(0.7))
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white.opacity(0.03))
+            
+            // Border overlay for definition
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.4), Color.white.opacity(0.1)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.5
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.3), Color.white.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.5
-                        )
-                )
-                .shadow(color: .black.opacity(0.3), radius: 15, x: 0, y: 8)
+            
+            // Soft shadow for depth
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.clear)
+                .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
             
             // Content
             HStack(spacing: 12) {
@@ -169,7 +174,7 @@ struct SoundWaveView: View {
     }
 }
 
-// MARK: - Visual Effect View for True Glass
+// MARK: - Visual Effect View for True Glass (Based on Cluely Research)
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
@@ -180,6 +185,14 @@ struct VisualEffectView: NSViewRepresentable {
         view.blendingMode = blendingMode
         view.state = .active
         view.isEmphasized = true
+        
+        // Add tint layer as per research
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        view.layer?.cornerRadius = 20
+        view.layer?.borderWidth = 0.5
+        view.layer?.borderColor = NSColor.white.withAlphaComponent(0.3).cgColor
+        
         return view
     }
     
