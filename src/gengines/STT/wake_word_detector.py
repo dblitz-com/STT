@@ -84,7 +84,9 @@ class WakeWordDetector:
                 self.openwakeword_model = OpenWakeWordModel(wakeword_models=['hey_jarvis'])
                 self.detection_method = "openwakeword"
                 self.is_initialized = True
+                self.frames_processed = 0  # Track frame count for initialization
                 print("DEBUG: openWakeWord initialized with 'hey_jarvis' model (temp for Zeus)", file=sys.stderr)
+                print("DEBUG: Model requires 5+ frames before returning real predictions", file=sys.stderr)
                 return
             except Exception as e:
                 print(f"DEBUG: openWakeWord initialization failed: {e}", file=sys.stderr)
@@ -138,69 +140,76 @@ class WakeWordDetector:
         # FIXED: Convert float32 (-1.0 to 1.0) to int16 PCM (expected by openWakeWord)
         audio_np = (np.array(audio_samples, dtype=np.float32) * 32767).astype(np.int16)
         
-        # Ensure minimum length: Pad with silence (zeros) if too short
-        min_samples = 16000  # 1 second @ 16kHz
-        if len(audio_np) < min_samples:
-            print(f"DEBUG: Padding audio from {len(audio_np)} to {min_samples} samples", file=sys.stderr)
-            audio_np = np.pad(audio_np, (0, min_samples - len(audio_np)), mode='constant')
+        # Process in 80ms chunks (1280 samples) for optimal performance
+        chunk_size = 1280  # 80ms at 16kHz
+        predictions = []
         
         # Enhanced diagnostics
         print(f"DEBUG: Processing {len(audio_np)} samples ({len(audio_np)/16000:.1f}s) with openWakeWord", file=sys.stderr)
-        print(f"DEBUG: Audio stats - shape: {audio_np.shape}, dtype: {audio_np.dtype}, min: {audio_np.min()}, max: {audio_np.max()}, mean: {audio_np.mean():.2f}", file=sys.stderr)
         
         # Check if audio has actual content (not silence)
         audio_energy = np.sqrt(np.mean(audio_np.astype(np.float32)**2))
-        print(f"DEBUG: Audio RMS energy: {audio_energy:.2f} (silence ~0, speech ~1000+)", file=sys.stderr)
+        print(f"DEBUG: Audio RMS energy: {audio_energy:.2f}", file=sys.stderr)
         
         try:
-            # Run inference with properly formatted audio
-            prediction = self.openwakeword_model.predict(audio_np)
+            # Process audio in chunks to build up the model's internal buffer
+            # openWakeWord requires 5+ frames before returning real predictions
+            for i in range(0, len(audio_np), chunk_size):
+                chunk = audio_np[i:i+chunk_size]
+                if len(chunk) < chunk_size:
+                    chunk = np.pad(chunk, (0, chunk_size - len(chunk)), mode='constant')
+                
+                prediction = self.openwakeword_model.predict(chunk)
+                predictions.append(prediction)
+                self.frames_processed += 1
             
-            # Try to get raw scores if available
-            try:
-                if hasattr(self.openwakeword_model, 'predict_with_raw_scores'):
-                    raw_scores = self.openwakeword_model.predict_with_raw_scores(audio_np)
-                    print(f"DEBUG: Raw scores available: {raw_scores}", file=sys.stderr)
-            except:
-                pass
+            # Use the last prediction (most recent)
+            final_prediction = predictions[-1] if predictions else {'hey_jarvis': 0.0}
             
             # Find the highest confidence prediction
             max_confidence = 0.0
             detected_keyword = None
             
-            for keyword, confidence in prediction.items():
+            for keyword, confidence in final_prediction.items():
                 if confidence > max_confidence:
                     max_confidence = confidence
                     detected_keyword = keyword
             
             # Debug logging for confidence analysis
-            print(f"DEBUG: Prediction results: {prediction}", file=sys.stderr)
+            print(f"DEBUG: Processed {len(predictions)} chunks, total frames: {self.frames_processed}", file=sys.stderr)
+            print(f"DEBUG: Final prediction: {final_prediction}", file=sys.stderr)
             print(f"DEBUG: Max confidence: {max_confidence} for keyword: {detected_keyword}", file=sys.stderr)
-            print(f"DEBUG: TFLite backend: {TFLITE_AVAILABLE}, Inference framework: {getattr(self.openwakeword_model, 'inference_framework', 'unknown')}", file=sys.stderr)
             
             # Threshold for detection (tune this based on testing)
-            # NOTE: On macOS ARM64, confidence scores are much lower than expected
-            # Typical scores: 0.0001 - 0.002 for speech
-            detection_threshold = 0.0005  # Much lower for macOS ARM64
+            # Note: First 5 frames return 0.0, then real predictions start
+            # Typical scores: 0.00001 - 0.001 for valid speech on macOS ARM64
+            detection_threshold = 0.00005  # Very low threshold for ARM64
+            
+            # Only consider detection after initialization period
+            if self.frames_processed < 5:
+                print(f"DEBUG: Still in initialization phase ({self.frames_processed}/5 frames)", file=sys.stderr)
+                max_confidence = 0.0  # Force zero during initialization
             
             if max_confidence > detection_threshold:
                 print(f"DEBUG: WAKE WORD DETECTED! '{detected_keyword}' with confidence {max_confidence}", file=sys.stderr)
                 return {
                     "wake_word_detected": True,
-                    "keyword": detected_keyword,
-                    "confidence": max_confidence,
+                    "keyword": str(detected_keyword),
+                    "confidence": float(max_confidence),  # Ensure JSON serializable
                     "detection_method": "openwakeword",
-                    "all_predictions": prediction,
-                    "audio_length_seconds": len(audio_np) / 16000
+                    "all_predictions": {k: float(v) for k, v in final_prediction.items()},  # Convert numpy types
+                    "frames_processed": int(self.frames_processed),
+                    "audio_length_seconds": float(len(audio_np) / 16000)
                 }
             else:
                 return {
                     "wake_word_detected": False,
                     "keyword": None,
-                    "confidence": max_confidence,
+                    "confidence": float(max_confidence),  # Ensure JSON serializable
                     "detection_method": "openwakeword",
-                    "all_predictions": prediction,
-                    "audio_length_seconds": len(audio_np) / 16000
+                    "all_predictions": {k: float(v) for k, v in final_prediction.items()},  # Convert numpy types
+                    "frames_processed": int(self.frames_processed),
+                    "audio_length_seconds": float(len(audio_np) / 16000)
                 }
                 
         except Exception as e:
