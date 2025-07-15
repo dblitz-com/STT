@@ -23,6 +23,17 @@ class VoiceDictationService {
     private var handsFreeEnabled = false
     private var lastPhase4AProcessTime: Double = 0.0
     
+    // Phase 4B: Hands-free state management
+    private enum HandsFreeState {
+        case idle
+        case wakeWordDetected
+        case recording
+        case processing
+        case inserting
+        case error
+    }
+    private var handsFreeState: HandsFreeState = .idle
+    
     // Phase 4A: Wake word audio buffer management
     private var wakeWordAudioBuffer: [Float] = []
     private let wakeWordBufferMaxSamples = Int(16000 * 2.0)  // 32,000 samples for 2s @ 16kHz
@@ -1136,6 +1147,19 @@ class VoiceDictationService {
             NSLog("❌ Failed to start recording: \(error)")
             isRecording = false
             
+            // Phase 4B: Handle hands-free error state
+            if handsFreeState == .recording || handsFreeState == .wakeWordDetected {
+                handsFreeState = .error
+                NSLog("🔄 Phase 4B: State transition: \(handsFreeState) → error")
+                NSLog("❌ Phase 4B: Hands-free recording failed, resetting state")
+                
+                // Reset to idle after error
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.handsFreeState = .idle
+                    NSLog("🔄 Phase 4B: State transition: error → idle (auto-reset)")
+                }
+            }
+            
             // Clean up on failure
             if audioEngine.isRunning {
                 audioEngine.stop()
@@ -1188,6 +1212,12 @@ class VoiceDictationService {
         
         NSLog("🛑 Stopping recording...")
         isRecording = false
+        
+        // Phase 4B: Handle hands-free state transition
+        if handsFreeState == .recording {
+            handsFreeState = .processing
+            NSLog("🔄 Phase 4B: State transition: recording → processing")
+        }
         
         // Update visual feedback
         AppDelegate.shared?.updateRecordingState(isRecording: false)
@@ -1254,6 +1284,30 @@ class VoiceDictationService {
         guard !sessionBuffer.isEmpty && aiEditingEnabled else {
             NSLog("📝 Session buffer empty or AI disabled - skipping session AI processing")
             NSLog("🚨 DEBUG: GUARD FAILED - sessionBuffer.isEmpty: \(sessionBuffer.isEmpty), aiEditingEnabled: \(aiEditingEnabled)")
+            
+            // Phase 4B: Handle hands-free completion even without AI processing
+            if handsFreeState == .processing && !sessionBuffer.isEmpty {
+                handsFreeState = .inserting
+                NSLog("🔄 Phase 4B: State transition: processing → inserting (without AI)")
+                
+                // Insert raw session buffer without AI enhancement
+                await insertRawText(sessionBuffer)
+                NSLog("✅ SESSION COMPLETE: Raw text inserted (AI disabled)")
+                
+                handsFreeState = .idle
+                NSLog("🔄 Phase 4B: State transition: inserting → idle")
+                NSLog("🎉 Phase 4B: Hands-free dictation cycle completed (without AI)!")
+                
+                // Clear session buffer
+                sessionBuffer = ""
+                sessionStartPosition = nil
+                NSLog("🧹 Session buffer cleared after raw text insertion")
+            } else if handsFreeState != .idle {
+                // Reset state if something went wrong
+                handsFreeState = .idle
+                NSLog("⚠️ Phase 4B: Resetting hands-free state to idle")
+            }
+            
             return
         }
         
@@ -1298,9 +1352,22 @@ class VoiceDictationService {
             NSLog("🚨 DEBUG: Inserting raw text at cursor...")
         }
         
+        // Phase 4B: Transition to inserting state
+        if handsFreeState == .processing {
+            handsFreeState = .inserting
+            NSLog("🔄 Phase 4B: State transition: processing → inserting")
+        }
+        
         // Insert the final text (enhanced or raw) at cursor position
         await insertRawText(textToInsert)
         NSLog("✅ SESSION COMPLETE: Text inserted at end of session")
+        
+        // Phase 4B: Complete hands-free flow - return to idle
+        if handsFreeState == .inserting {
+            handsFreeState = .idle
+            NSLog("🔄 Phase 4B: State transition: inserting → idle")
+            NSLog("🎉 Phase 4B: Hands-free dictation cycle completed successfully!")
+        }
         
         // Clear session buffer after processing
         sessionBuffer = ""
@@ -1615,8 +1682,32 @@ class VoiceDictationService {
     
     // Phase 4A: Wake word detected callback
     private func onWakeWordDetected(keyword: String, confidence: Double) {
-        NSLog("🗣️ Phase 4A: Wake word '\(keyword)' detected (placeholder action)")
-        // Future: Start recording when wake word is detected
+        NSLog("🗣️ Phase 4B: Wake word '\(keyword)' detected with confidence \(confidence)")
+        
+        // Only proceed if we're in idle state and confidence is high enough
+        guard handsFreeState == .idle, confidence > 0.00005 else {
+            NSLog("⚠️ Phase 4B: Ignoring wake word - wrong state (\(handsFreeState)) or low confidence")
+            return
+        }
+        
+        // Transition to wake word detected state
+        handsFreeState = .wakeWordDetected
+        NSLog("🔄 Phase 4B: State transition: idle → wakeWordDetected")
+        
+        // Bridge to existing dictation system
+        if !isRecording {
+            NSLog("🎤 Phase 4B: Starting hands-free recording...")
+            handsFreeState = .recording
+            startRecording()
+            
+            // Show visual feedback for hands-free mode
+            DispatchQueue.main.async {
+                AppDelegate.shared?.updateRecordingState(isRecording: true)
+            }
+        } else {
+            NSLog("⚠️ Phase 4B: Already recording, wake word ignored")
+            handsFreeState = .idle  // Reset state
+        }
     }
     
     private func nonCancellableAsync<T>(_ operation: @escaping () async throws -> T) async throws -> T {
