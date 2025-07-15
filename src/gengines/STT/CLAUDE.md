@@ -250,12 +250,12 @@ The app provides extensive logging for troubleshooting:
 - **Performance**: <2s processing time, context-aware tone matching
 - **Testing**: Confirmed working with all app contexts
 
-**2. ✅ AI Commands & Voice Editing**  
-- **Status**: Fully implemented via `ai_command_processor.py`
-- **Model**: qwen2.5:7b-instruct-q4_0 for classification and processing
-- **Commands**: "delete last sentence", "make this formal/casual", tone changes
-- **Detection**: Hybrid regex + LLM classification for 99%+ accuracy
-- **Testing**: All basic and advanced commands working correctly
+**2. ⚠️ Voice Commands (Partially Implemented)**  
+- **Status**: Detection framework exists, but execution NOT implemented
+- **Working**: Basic punctuation commands ("new line", "period", "comma")
+- **NOT Working**: Complex commands requiring text selection/manipulation
+- **Missing**: "delete last sentence", "make this formal", context-aware editing
+- **Limitation**: Can only insert new text, not modify existing text in applications
 
 **3. ✅ Context-Aware Tone Matching**
 - **Status**: Fully implemented with app detection
@@ -280,21 +280,27 @@ The app provides extensive logging for troubleshooting:
    - **Estimated Fix**: 1 week for hidutil remapping fallback
 
 ### MEDIUM Priority (Features)
-3. **🗣️ Train Custom "Zeus" Wake Word Model** - Replace "hey_jarvis"
+3. **🎯 Implement Advanced Voice Commands** - Complete the command framework
+   - **Missing**: Text selection, existing text manipulation, context tracking
+   - **Commands**: "delete last sentence", "make this formal", "select last paragraph"
+   - **Challenge**: Requires deep accessibility API integration across all apps
+   - **Estimated Work**: 3-4 weeks for full implementation
+
+4. **🗣️ Train Custom "Zeus" Wake Word Model** - Replace "hey_jarvis"
    - **Current**: Using openWakeWord "hey_jarvis" model
    - **Goal**: Custom neural network for "Zeus" or "hey Zeus"
    - **Tools**: openWakeWord training pipeline
    - **Estimated Work**: 2-3 weeks with data collection
 
-4. **📱 Settings UI for User Customization**
+5. **📱 Settings UI for User Customization**
    - **Features**: Wake word sensitivity, AI enhancement toggle, hotkey selection
    - **Priority**: After core bugs fixed
    - **Estimated Work**: 1-2 weeks
 
 ### LOW Priority (Nice to Have)
-5. **🔊 Multiple Wake Word Support** - Allow user-defined wake words
-6. **🌐 Multi-language STT Support** - Beyond English
-7. **☁️ Cloud Model Options** - For users preferring GPT-4 over local models
+6. **🔊 Multiple Wake Word Support** - Allow user-defined wake words
+7. **🌐 Multi-language STT Support** - Beyond English
+8. **☁️ Cloud Model Options** - For users preferring GPT-4 over local models
 
 ## 🔧 ARCHITECTURE SUMMARY
 
