@@ -12,9 +12,9 @@ from typing import Optional, Dict, Any
 
 # Configuration
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
-COMMAND_MODEL = "mistral:7b"
-FALLBACK_MODEL = "llama3.1:8b"  # Fallback if Mistral not available
-REQUEST_TIMEOUT = 1.0  # 1 second timeout for real-time performance
+COMMAND_MODEL = "qwen2.5:7b-instruct-q4_0"  # Excellent for command classification and text editing
+FALLBACK_MODEL = "mistral:7b"  # Good fallback model
+REQUEST_TIMEOUT = 3.0  # 3 second timeout for command processing
 
 # Command classification prompt
 CLASSIFY_PROMPT = """You are a voice command classifier. Determine if the input is a voice command or regular dictation content.

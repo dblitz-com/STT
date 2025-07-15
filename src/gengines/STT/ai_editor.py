@@ -13,8 +13,8 @@ from typing import Optional
 
 # Configuration
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama3.1:8b"
-FALLBACK_MODEL = "phi3:mini"  # Smaller model as backup
+MODEL_NAME = "qwen2.5:7b-instruct-q4_0"  # Excellent for text editing and instruction following
+FALLBACK_MODEL = "mistral:7b"  # Good backup model
 REQUEST_TIMEOUT = 2.0  # 2 second timeout for real-time performance
 
 def simple_filler_removal(text: str) -> str:
