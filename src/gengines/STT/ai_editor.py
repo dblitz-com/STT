@@ -13,8 +13,8 @@ from typing import Optional
 
 # Configuration
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama3.1:8b"
-FALLBACK_MODEL = "phi3:mini"  # Smaller model as backup
+MODEL_NAME = "qwen2.5:7b-instruct-q4_0"  # Excellent for text editing and instruction following
+FALLBACK_MODEL = "mistral:7b"  # Good backup model
 REQUEST_TIMEOUT = 2.0  # 2 second timeout for real-time performance
 
 def simple_filler_removal(text: str) -> str:
@@ -109,12 +109,13 @@ def call_ollama_api(text: str, model: str, context: dict = None) -> Optional[str
     # Context-specific adaptations
     context_rules = get_context_specific_rules(app_category)
     
-    prompt = f"""You are a precise transcript editor. Your task is to refine spoken text into polished written text using {tone_hint}.
+    prompt = f"""You are a precise transcript editor. Refine this spoken text into polished written text using {tone_hint}.
 
-Rules:
+RULES:
 {base_rules}
 {context_rules}
-- Output only the refined text, nothing else
+
+CRITICAL: Output ONLY the refined text with no extra words, explanations, or labels.
 
 Raw transcript: {text}
 

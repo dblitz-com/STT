@@ -2326,14 +2326,11 @@ class VoiceDictationService {
     private func initializePhase4AVariables() {
         NSLog("🚀 Initializing Phase 4A variables (no audio changes)...")
         
-        // 🔥 PHASE 4B TESTING: Auto-enable hands-free mode for testing
-        handsFreeEnabled = true
+        // Hands-free mode starts disabled - user must enable via menu
+        handsFreeEnabled = false
         
         NSLog("✅ Phase 4A variables initialized")
-        NSLog("🔊 PHASE 4B TESTING: Hands-free mode AUTO-ENABLED for testing")
-        
-        // Start continuous audio monitoring immediately
-        startContinuousAudioForHandsFree()
+        NSLog("🔊 Hands-free mode available but disabled by default - enable via menu bar")
         
         // Log available functions
         NSLog("📋 Phase 4A functions available:")
