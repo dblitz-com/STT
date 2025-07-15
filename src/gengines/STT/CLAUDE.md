@@ -280,11 +280,18 @@ The app provides extensive logging for troubleshooting:
    - **Estimated Fix**: 1 week for hidutil remapping fallback
 
 ### MEDIUM Priority (Features)
-3. **🎯 Implement Advanced Voice Commands** - Complete the command framework
-   - **Missing**: Text selection, existing text manipulation, context tracking
-   - **Commands**: "delete last sentence", "make this formal", "select last paragraph"
-   - **Challenge**: Requires deep accessibility API integration across all apps
-   - **Estimated Work**: 3-4 weeks for full implementation
+3. **🧠 MEMORY-ENHANCED CONTEXT SYSTEM** - Proven architecture from zQuery
+   - **Implementation**: Mem0 + Graphiti (Zep) for spatial/temporal text relationships
+   - **Core Problem Solved**: Human-level context understanding for "this", "above bullets", "yesterday"
+   - **Performance**: 90% token reduction, 26% higher success rate (validated benchmarks)
+   - **Technical Stack**: 
+     - **Mem0**: Conversation compression and personalization (`mem0ai==0.1.114`)
+     - **Graphiti (Zep)**: Temporal knowledge graphs (`zep-python==2.10.1`)
+     - **Swift-Python Bridge**: XPC service for <50ms memory queries
+     - **Vision Integration**: Enhanced OCR with spatial relationship modeling
+   - **Commands Enabled**: "make this formal", "paragraph above bullets", "text from 5 minutes ago"
+   - **Integration**: Zeus_STT Voice → Mem0 Context → Graphiti Spatial Query → Vision OCR → Action
+   - **Estimated Work**: 8 weeks (proven implementation path available)
 
 4. **🗣️ Train Custom "Zeus" Wake Word Model** - Replace "hey_jarvis"
    - **Current**: Using openWakeWord "hey_jarvis" model
@@ -312,6 +319,13 @@ The app provides extensive logging for troubleshooting:
 - **Context Detection**: macOS accessibility APIs for app-specific tone matching
 - **Performance**: <2s total latency for wake word → text insertion
 
+### Future Implementation (Memory-Enhanced)
+- **Memory Pipeline**: Zeus_STT Voice → Mem0 Context → Graphiti Spatial Query → Vision OCR → Enhanced AI → Text Action
+- **Context Understanding**: Human-level spatial/temporal awareness via proven zQuery architecture
+- **Memory Stack**: Mem0 (compression) + Graphiti (relationships) + XPC bridge (<50ms queries)
+- **Advanced Commands**: "make this formal", "paragraph above bullets", "text from yesterday"
+- **Performance Target**: <500ms total latency with 90% context compression and 26% higher success rate
+
 ### Key Files  
 - `Sources/VoiceDictationService.swift` - Core dictation service with Phase 4B state machine
 - `ai_editor.py` - Text enhancement (filler removal, grammar, punctuation)  
@@ -319,3 +333,9 @@ The app provides extensive logging for troubleshooting:
 - `wake_word_detector_openww.py` - openWakeWord neural network integration
 - `context_manager.py` - App context detection for tone matching
 - `learning_manager.py` - Personal dictionary and learning system
+
+### Future Memory Files (Planned)
+- `memory_service.py` - Mem0 + Graphiti integration for spatial/temporal context
+- `spatial_relationship_builder.py` - Document structure modeling and edge building
+- `MemoryXPCService.swift` - Swift-Python bridge for low-latency memory queries
+- `enhanced_text_state.py` - Extended state schema with memory contexts
