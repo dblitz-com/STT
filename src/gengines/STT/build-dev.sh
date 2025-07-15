@@ -56,15 +56,19 @@ if [ -d "Resources" ]; then
     cp -r Resources/* "Zeus_STT Dev.app/Contents/Resources/" 2>/dev/null || true
 fi
 
-# Copy venv if it exists
-if [ -d "venv" ]; then
-    echo "📦 Copying Python virtual environment..."
+# Copy correct Python venv (3.12 for openWakeWord)
+if [ -d "venv_py312" ]; then
+    echo "📦 Copying Python 3.12 virtual environment..."
+    cp -r venv_py312 "Zeus_STT Dev.app/Contents/Resources/"
+elif [ -d "venv" ]; then
+    echo "📦 Copying fallback Python virtual environment..."
     cp -r venv "Zeus_STT Dev.app/Contents/Resources/"
 fi
 
-# Copy AI scripts
-for script in ai_editor.py ai_command_processor.py; do
+# Copy all Python scripts (AI + Phase 4A)
+for script in ai_editor.py ai_command_processor.py wake_word_detector.py vad_processor.py; do
     if [ -f "$script" ]; then
+        echo "📦 Copying $script..."
         cp "$script" "Zeus_STT Dev.app/Contents/Resources/"
     fi
 done

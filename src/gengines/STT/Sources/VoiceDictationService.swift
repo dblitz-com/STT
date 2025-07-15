@@ -83,12 +83,15 @@ class VoiceDictationService {
         // Initialize AI editor paths
         let currentDir = FileManager.default.currentDirectoryPath
         
-        // Try to use bundled venv first, fallback to development paths
+        // Try to use bundled venv_py312 first (Python 3.12 + openWakeWord), fallback to development paths
         if let resourcePath = Bundle.main.resourcePath,
-           FileManager.default.fileExists(atPath: resourcePath + "/venv/bin/python") {
-            self.pythonPath = resourcePath + "/venv/bin/python"
+           FileManager.default.fileExists(atPath: resourcePath + "/venv_py312/bin/python") {
+            self.pythonPath = resourcePath + "/venv_py312/bin/python"
+        } else if let resourcePath = Bundle.main.resourcePath,
+                  FileManager.default.fileExists(atPath: resourcePath + "/venv/bin/python") {
+            self.pythonPath = resourcePath + "/venv/bin/python"  // Fallback to old venv
         } else {
-            self.pythonPath = currentDir + "/venv_py312/bin/python"
+            self.pythonPath = currentDir + "/venv_py312/bin/python"  // Development fallback
         }
         
         if let scriptPath = Bundle.main.path(forResource: "ai_editor", ofType: "py") {
