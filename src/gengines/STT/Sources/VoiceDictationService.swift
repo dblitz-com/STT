@@ -91,6 +91,10 @@ class VoiceDictationService {
     private let learningManager = LearningManager()
     
     init() {
+        // DEBUG: Force a print to verify logging
+        print("🚀 VoiceDictationService initializing...")
+        NSLog("🚀 VoiceDictationService initializing via NSLog...")
+        
         // Initialize AI editor paths
         let currentDir = FileManager.default.currentDirectoryPath
         
@@ -1439,11 +1443,20 @@ class VoiceDictationService {
             by: buffer.stride
         ).map { channelDataValue[$0] }
         
-        NSLog("🎤 Received audio buffer: \(buffer.frameLength) frames, \(channelDataValueArray.count) samples")
+        NSLog("🎤 Received audio buffer: \(buffer.frameLength) frames, \(channelDataValueArray.count) samples, handsFreeState: \(handsFreeState), isRecording: \(isRecording)")
         
         // Phase 4A: Send audio to VAD/wake word detection (when hands-free enabled and not recording)
         if handsFreeEnabled && !isRecording {
+            NSLog("🔍 Phase 4A: Processing audio for wake word detection")
             processPhase4AAudio(channelDataValueArray)
+        }
+        
+        // Phase 4B: VAD endpoint detection during hands-free recording
+        if handsFreeState == .recording && isRecording {
+            NSLog("🎯 Phase 4B: Calling VAD for auto-stop detection")
+            processHandsFreeVAD(channelDataValueArray)
+        } else if isRecording {
+            NSLog("⚠️ Phase 4B: Recording but handsFreeState is \(handsFreeState), not calling VAD")
         }
         
         bufferQueue.sync {
@@ -1585,7 +1598,7 @@ class VoiceDictationService {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
-        process.terminationHandler = { [weak self] process in
+        process.terminationHandler = { process in
             NSLog("🎯 Phase 4A Wake Word: Process terminated with status: \(process.terminationStatus)")
             
             let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
@@ -1603,7 +1616,9 @@ class VoiceDictationService {
                 if let data = output.data(using: .utf8),
                    let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     NSLog("🎯 Phase 4A Wake Word: Successfully parsed JSON result")
-                    self?.handleWakeWordResult(result)
+                    DispatchQueue.main.async {
+                        self.handleWakeWordResult(result)
+                    }
                 } else {
                     NSLog("❌ Phase 4A Wake Word: Failed to parse JSON from output: \(output)")
                 }
@@ -2311,11 +2326,14 @@ class VoiceDictationService {
     private func initializePhase4AVariables() {
         NSLog("🚀 Initializing Phase 4A variables (no audio changes)...")
         
-        // Start with hands-free disabled by default
-        handsFreeEnabled = false
+        // 🔥 PHASE 4B TESTING: Auto-enable hands-free mode for testing
+        handsFreeEnabled = true
         
         NSLog("✅ Phase 4A variables initialized")
-        NSLog("🔇 Hands-free mode: DISABLED (can be enabled later)")
+        NSLog("🔊 PHASE 4B TESTING: Hands-free mode AUTO-ENABLED for testing")
+        
+        // Start continuous audio monitoring immediately
+        startContinuousAudioForHandsFree()
         
         // Log available functions
         NSLog("📋 Phase 4A functions available:")
@@ -2458,6 +2476,163 @@ class VoiceDictationService {
         - Current Mode: \(isRecording ? "Recording" : "Idle")
         - Audio Engine: \(audioEngine.isRunning ? "Running" : "Stopped")
         """
+    }
+    
+    // Phase 4B: VAD-based automatic speech endpoint detection for hands-free recording
+    private var speechEndpointBuffer: [Float] = []
+    private var consecutiveSilenceChunks = 0
+    private let silenceThreshold: Float = 0.001 // Lower energy threshold for better silence detection
+    private let maxSilenceChunks = 8 // ~800ms of silence at 100ms chunks (more forgiving)
+    private let minRecordingDuration: TimeInterval = 1.0 // Minimum 1 second recording
+    private var handsFreeRecordingStartTime: Date?
+    
+    private func processHandsFreeVAD(_ samples: [Float]) {
+        NSLog("🎙️ Phase 4B VAD: Processing \(samples.count) samples for speech endpoint detection")
+        
+        // Track recording start time for minimum duration
+        if handsFreeRecordingStartTime == nil {
+            handsFreeRecordingStartTime = Date()
+            NSLog("⏱️ Phase 4B VAD: Recording started, tracking minimum duration")
+        }
+        
+        // Calculate energy of current audio chunk
+        let energy = samples.map { $0 * $0 }.reduce(0, +) / Float(samples.count)
+        let energyDB = 20 * log10(sqrt(energy) + 1e-10)
+        
+        NSLog("📊 Phase 4B VAD: Chunk energy = \(energy), dB = \(energyDB)")
+        
+        // Determine if current chunk is speech or silence
+        let isSpeech = energy > silenceThreshold
+        
+        if isSpeech {
+            // Reset silence counter when speech detected
+            consecutiveSilenceChunks = 0
+            NSLog("🗣️ Phase 4B VAD: Speech detected, silence counter reset")
+        } else {
+            // Increment silence counter
+            consecutiveSilenceChunks += 1
+            NSLog("🤫 Phase 4B VAD: Silence chunk \(consecutiveSilenceChunks)/\(maxSilenceChunks)")
+        }
+        
+        // Check if we should stop recording due to extended silence
+        if consecutiveSilenceChunks >= maxSilenceChunks {
+            // Ensure minimum recording duration has passed
+            if let startTime = handsFreeRecordingStartTime {
+                let recordingDuration = Date().timeIntervalSince(startTime)
+                NSLog("⏱️ Phase 4B VAD: Recording duration = \(recordingDuration)s")
+                
+                if recordingDuration >= minRecordingDuration {
+                    NSLog("🛑 Phase 4B VAD: Extended silence detected - auto-stopping recording")
+                    stopHandsFreeRecording()
+                } else {
+                    NSLog("⏳ Phase 4B VAD: Extended silence but recording too short, continuing...")
+                }
+            } else {
+                NSLog("🛑 Phase 4B VAD: Extended silence detected - auto-stopping recording (no start time)")
+                stopHandsFreeRecording()
+            }
+        }
+        
+        // Also use Silero VAD for more sophisticated detection
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.runSileroVADForEndpoint(samples: samples)
+        }
+    }
+    
+    private func stopHandsFreeRecording() {
+        NSLog("🛑 Phase 4B: Stopping hands-free recording due to speech endpoint")
+        
+        // Reset VAD state
+        consecutiveSilenceChunks = 0
+        handsFreeRecordingStartTime = nil
+        speechEndpointBuffer.removeAll()
+        
+        // Update state machine
+        handsFreeState = .processing
+        NSLog("🔄 Phase 4B: State transition: recording → processing")
+        
+        // Stop the actual recording
+        DispatchQueue.main.async {
+            if self.isRecording {
+                self.stopRecording()
+                AppDelegate.shared?.updateRecordingState(isRecording: false)
+            }
+        }
+    }
+    
+    // Phase 4B: Enhanced VAD using Silero for endpoint detection
+    private func runSileroVADForEndpoint(samples: [Float]) {
+        let jsonInput: [String: Any] = [
+            "audio_samples": samples,
+            "threshold": 0.3, // Lower threshold for endpoint detection
+            "environment": "office"
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonInput),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            NSLog("❌ Phase 4B Silero VAD: Failed to create JSON input")
+            return
+        }
+        
+        let process = Process()
+        process.launchPath = pythonPath
+        
+        // Use bundled VAD processor
+        let vadProcessorPath: String
+        if let bundledPath = Bundle.main.path(forResource: "vad_processor", ofType: "py") {
+            vadProcessorPath = bundledPath
+        } else {
+            vadProcessorPath = FileManager.default.currentDirectoryPath + "/vad_processor.py"
+        }
+        
+        process.arguments = [vadProcessorPath, jsonString]
+        
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        
+        process.terminationHandler = { process in
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            
+            let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let error = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            
+            if !error.isEmpty {
+                NSLog("🔍 Phase 4B Silero VAD stderr: \(error)")
+            }
+            
+            if !output.isEmpty {
+                if let data = output.data(using: .utf8),
+                   let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    DispatchQueue.main.async {
+                        self.handleSileroVADResult(result)
+                    }
+                }
+            }
+        }
+        
+        do {
+            try process.run()
+        } catch {
+            NSLog("❌ Phase 4B Silero VAD: Failed to start process: \(error)")
+        }
+    }
+    
+    private func handleSileroVADResult(_ result: [String: Any]) {
+        guard handsFreeState == .recording else { return }
+        
+        let voiceDetected = result["voice_detected"] as? Bool ?? false
+        let confidence = result["confidence"] as? Double ?? 0.0
+        
+        NSLog("🎯 Phase 4B Silero VAD: voice_detected=\(voiceDetected), confidence=\(confidence)")
+        
+        // If Silero VAD confirms no voice activity, help trigger endpoint
+        if !voiceDetected && confidence < 0.1 {
+            consecutiveSilenceChunks += 1 // Boost silence detection
+            NSLog("🤫 Phase 4B Silero VAD: Confirming silence, boosted silence counter")
+        }
     }
 }
 
