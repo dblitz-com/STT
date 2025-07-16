@@ -1,7 +1,7 @@
-# Zeus_STT - Claude Development Notes
+# Zeus VLA - Claude Development Notes
 
 ## Project Overview  
-Open-source voice-to-text system for Mac that intercepts the Fn key to toggle dictation, providing **memory-enhanced context-aware voice commands** with universal text insertion across all applications.
+Open-source Vision Language Action system for Mac that intercepts the Fn key to toggle dictation, providing **multimodal context-aware commands** with universal text manipulation across all applications through continuous visual monitoring, natural language understanding, and direct action execution.
 
 ## 🎉 CURRENT STATUS: MEMORY COMPLETE, VISION IN PROGRESS
 ✅ **Memory-Enhanced Commands**: Mem0 + XPC bridge working for context resolution  
@@ -26,12 +26,12 @@ Open-source voice-to-text system for Mac that intercepts the Fn key to toggle di
 - **Mock Graphiti**: Lightweight spatial relationships for "above", "below", "next to" commands
 - **Complex Command Detection**: Automatic pattern matching for memory-enhanced processing
 
-### Memory Query Pipeline
+### Zeus VLA Pipeline
 ```
-Voice Input → Complex Pattern Detection → XPC Memory Query → Context Resolution → Action
-     ↓                    ↓                      ↓                  ↓             ↓
-   Fn Key         "make this formal"         <50ms lookup     "this" = text    Format text
- Intercept         Pattern match            Python bridge    at cursor        & insert
+VISION (Continuous) + LANGUAGE (Voice/Text) → Context Resolution → ACTION (Direct Manipulation)
+     ↓                        ↓                      ↓                    ↓
+Screen Monitoring    "make this formal"      XPC Memory+Vision     CGEvent text
+  Always-on           Natural language         <50ms lookup         manipulation
 ```
 
 ### Performance Metrics (ACHIEVED)
@@ -90,12 +90,12 @@ class VisionCaptureManager: NSObject, ObservableObject {
 2. Debug build includes test triggers within the app itself
 3. Permissions granted to `com.stt.dictate.dev` for development testing
 
-### Vision Integration Pipeline (PLANNED)
+### Zeus VLA Architecture (IMPLEMENTED)
 ```
-Voice Input → Visual Reference Detection → Screen Capture → VLM Analysis → Action
-     ↓                    ↓                      ↓                ↓          ↓
-"delete this"    "this" needs visual      ScreenCaptureKit    Qwen2-VL    CGEvent
-                    context               384px optimized     local VLM   deletion
+VISION (Always-On) + LANGUAGE (Voice Commands) → Multimodal Analysis → ACTION
+        ↓                    ↓                          ↓                 ↓
+Continuous Screen     "delete this text"         GPT-4.1-mini       Direct text
+  Monitoring          Spatial reference           via LiteLLM        manipulation
 ```
 
 ### Next Steps (Week 1 Remaining Tasks)
@@ -514,35 +514,82 @@ const response = await streamingLLM.streamChat(messages);
 
 **Our Hybrid Approach:**
 - **Simplicity** of Cheating Daddy + **Reliability** of Glass
-- **Local VLM processing** (Qwen2-VL) for privacy-first approach
+- **GPT-4.1-mini vision** via LiteLLM for >95% accuracy
 - **ScreenCaptureKit** for native macOS performance optimization
-- **Mem0 integration** for persistent visual context memory
-- **Real-time voice → vision → action** pipeline
+- **Mem0 + Graphiti** for persistent multimodal context
+- **Zeus VLA**: Continuous Vision + Natural Language → Direct Action
 
 ## Competitive Analysis: Zeus_STT vs Reverse-Engineered Solutions
 
-| **Feature** | **Cheating Daddy** | **Glass** | **Zeus_STT (Our Solution)** |
-|-------------|-------------------|-----------|----------------------------|
-| **Codebase Size** | 2,563 lines (minimal) | 11,959 lines (enterprise) | **Optimal hybrid approach** |
-| **Dependencies** | 2 (ultra-simple) | 25+ (complex) | **<10 (focused essentials)** |
-| **VLM Integration** | Gemini only | Multi-provider | **Local Qwen2-VL + cloud fallback** |
-| **Screen Capture** | Web API (1 FPS) | Native macOS tools | **ScreenCaptureKit (Swift native)** |
-| **Audio Processing** | SystemAudioDump | Whisper + AEC | **WhisperKit + existing pipeline** |
-| **Memory System** | Session history only | SQLite + Firebase | **Mem0 + XPC bridge (existing)** |
-| **Privacy** | Cloud-dependent | Hybrid local/cloud | **100% local processing** |
-| **Response Time** | 5-10s (cloud API) | Variable (100ms-5s) | **<500ms target (local VLM)** |
-| **Voice Integration** | None (overlay only) | None (overlay only) | **Native voice → vision → action** |
-| **Text Manipulation** | None (suggestions only) | None (suggestions only) | **Direct CGEvent text editing** |
-| **Spatial Memory** | None | Basic repositories | **Persistent visual context graphs** |
-| **Error Handling** | Basic reconnection | Smart fallbacks | **Multi-tier fallbacks + local backup** |
+| **Feature** | **Cheating Daddy** | **Glass** | **Clueless** | **Cluely.com** | **Zeus_STT (Our Solution)** |
+|-------------|-------------------|-----------|--------------|----------------|----------------------------|
+| **Tech Stack** | Electron + Gemini | Node.js + Multi-provider | Laravel + Vue + OpenAI | Unknown (Cloud SaaS) | **Swift + Python + Ollama** |
+| **Codebase Size** | 2,563 lines (minimal) | 11,959 lines (enterprise) | ~15,000+ lines (PHP/Vue) | Unknown | **Optimal hybrid approach** |
+| **Dependencies** | 2 (ultra-simple) | 25+ (complex) | 50+ (Laravel ecosystem) | Unknown | **<10 (focused essentials)** |
+| **Primary Function** | Interview/exam assist | Professional AI assistant | Meeting transcription | Screen + audio analysis | **Vision Language Action (VLA)** |
+| **VLM Integration** | Gemini 2.0 Flash Live | Multi-provider | OpenAI Realtime API | GPT-4o (suspected) | **GPT-4.1-mini via LiteLLM** |
+| **Screen Capture** | Web API (1 FPS) | Native macOS tools | Placeholder only | Full-screen periodic | **ScreenCaptureKit (Swift native)** |
+| **Audio Processing** | SystemAudioDump | Whisper + AEC | Native Swift capture | Unknown | **WhisperKit + existing pipeline** |
+| **Memory System** | Session history only | SQLite + Firebase | Dual SQLite DBs | Session-based | **Mem0 + Graphiti + XPC bridge** |
+| **Privacy** | Cloud-dependent | Hybrid local/cloud | Cloud-dependent | Cloud-dependent | **100% local processing option** |
+| **Response Time** | 5-10s (cloud API) | Variable (100ms-5s) | Real-time streaming | 5-10s (cloud API) | **<500ms target** |
+| **VLA Integration** | None (overlay only) | None (overlay only) | Audio transcription | None (overlay only) | **Full Vision Language Action** |
+| **Text Manipulation** | None (suggestions only) | None (suggestions only) | None (transcription only) | None (suggestions only) | **Direct CGEvent text editing** |
+| **Spatial Memory** | None | Basic repositories | None | None | **Persistent visual context graphs** |
+| **Error Handling** | Basic reconnection | Smart fallbacks | Basic WebSocket retry | Unknown | **Multi-tier fallbacks + local backup** |
+| **Business Model** | "Cheating" focused | Professional/Enterprise | Meeting assistant | SaaS product | **Open source, privacy-first** |
+| **Continuous Vision** | No | No | No | Unknown | **Always-on monitoring** |
+| **License** | Unknown | Unknown | MIT + Commons Clause | Proprietary | **Open source (planned)** |
 
-### **Our Competitive Advantages:**
-1. **Privacy-First**: 100% local VLM processing vs cloud-dependent competitors
-2. **Voice Integration**: Native voice → vision → action pipeline vs overlay-only solutions  
-3. **Memory Enhancement**: Persistent Mem0 visual context vs session-only approaches
-4. **Real-Time Performance**: <500ms total latency vs 5-10s cloud delays
-5. **Universal Text Manipulation**: Direct CGEvent editing vs suggestion overlays
-6. **Hybrid Architecture**: Best of both worlds - Cheating Daddy's simplicity + Glass's reliability
+### 📊 Detailed Competitor Analysis
+
+#### **Clueless (NEW)**
+**Strengths:**
+- Professional Laravel/Vue architecture
+- Real-time OpenAI integration via WebSockets  
+- Native macOS audio capture (Swift)
+- Dual database architecture for flexibility
+- Clean code structure with proper testing
+
+**Weaknesses:**  
+- No actual screen capture implementation (placeholder only)
+- No vision capabilities whatsoever
+- Meeting-focused, not general text manipulation
+- Heavy dependency footprint (Laravel ecosystem)
+- Cloud-dependent for all AI features
+
+**Key Insights:**
+- Uses OpenAI Realtime API for live transcription (model: `gpt-4o-realtime-preview-2024-12-17`)
+- WebSocket relay architecture for browser-to-OpenAI communication
+- Complex audio capture via native Swift executable
+- No visual context awareness - pure audio transcription
+
+#### **Updated Competitive Matrix**
+
+| **Capability** | **Cheating Daddy** | **Glass** | **Clueless** | **Zeus_STT** |
+|----------------|-------------------|-----------|--------------|--------------|
+| **Visual Understanding** | ✅ Gemini VLM | ✅ Multi-provider | ❌ None | ✅ GPT-4.1-mini |
+| **Audio Processing** | ✅ Basic | ✅ Advanced | ✅ Native Swift | ✅ WhisperKit |
+| **Text Manipulation** | ❌ | ❌ | ❌ | ✅ CGEvent |
+| **Memory System** | ❌ | ✅ Basic | ❌ | ✅ Advanced |
+| **Local Processing** | ❌ | Partial | ❌ | ✅ Full option |
+| **Continuous Monitoring** | ❌ | ❌ | ❌ | ✅ Always-on |
+| **VLA Pipeline** | ❌ | ❌ | ❌ Transcription only | ✅ Complete VLA |
+
+### **Zeus VLA Unique Value Propositions:**
+1. **Complete Vision Language Action (VLA) System**: Only solution with true multimodal integration
+2. **Universal Text Manipulation**: Direct editing in ANY application via CGEvent
+3. **Privacy-First Architecture**: Local processing options unavailable in competitors
+4. **Continuous Visual Context**: Always-on vision monitoring feeds language understanding
+5. **Advanced Memory System**: Mem0 + Graphiti for persistent multimodal context
+6. **Open Source VLA Platform**: Transparent development vs proprietary competitors
+
+### **Technology Adoption Strategy:**
+From our analysis, we should adopt:
+- **From Cheating Daddy**: Simple architecture, token tracking, real-time streaming
+- **From Glass**: Multi-provider support, error handling, image optimization
+- **From Clueless**: Native audio capture patterns, WebSocket architecture
+- **Avoid**: Over-engineering (Glass), single-provider lock-in (Cheating Daddy), lack of vision (Clueless)
 
 ## Technical Architecture Report
 
@@ -715,32 +762,34 @@ class MemoryVisionBridge:
         return [m for m in memories if m.get("type") == "spatial_reference"]
 ```
 
-### Real-Time Integration Pipeline (Cheating Daddy + Glass Hybrid)
+### Zeus VLA Integration (Vision + Language → Action)
 ```swift
 // In VoiceDictationService.swift
 extension VoiceDictationService {
     
-    func processVisionEnhancedCommand(_ text: String) async {
-        // Detect if command needs visual context
-        guard isVisualReferenceCommand(text) else {
-            await processRegularCommand(text)
-            return
-        }
+    func processVLACommand(_ languageInput: String) async {
+        // Zeus VLA: Combine continuous vision with language understanding
         
-        // Parallel processing like Cheating Daddy's architecture
-        async let visionContext = visionService.analyzeScreenForCommand(text)
-        async let memoryContext = memoryService.queryRelevantContext(text)
+        // Get latest visual context from always-on monitoring
+        let visualContext = await continuousVisionService.getCurrentContext()
         
-        let (vision, memory) = await (visionContext, memoryContext)
+        // Process language with visual context
+        async let spatialAnalysis = visionService.analyzeSpatialCommand(languageInput, visualContext)
+        async let memoryContext = memoryService.queryRelevantContext(languageInput)
         
-        // Combine contexts and execute action
-        let resolvedAction = combineContexts(vision: vision, memory: memory, command: text)
-        await executeTextAction(resolvedAction)
+        let (spatial, memory) = await (spatialAnalysis, memoryContext)
+        
+        // Execute action based on multimodal understanding
+        let action = resolveVLAAction(language: languageInput, vision: spatial, memory: memory)
+        await executeDirectAction(action)
     }
     
-    private func isVisualReferenceCommand(_ text: String) -> Bool {
-        let visualKeywords = ["this", "that", "above", "below", "next to", "here", "there"]
-        return visualKeywords.contains { text.lowercased().contains($0) }
+    private func isVLACommand(_ text: String) -> Bool {
+        // All commands benefit from visual context in Zeus VLA
+        let spatialKeywords = ["this", "that", "above", "below", "here", "there"]
+        let actionKeywords = ["delete", "format", "copy", "move", "select"]
+        return spatialKeywords.contains { text.lowercased().contains($0) } ||
+               actionKeywords.contains { text.lowercased().contains($0) }
     }
 }
 ```
@@ -879,4 +928,4 @@ python memory_xpc_server.py --port 5002
 4. **Memory-Enhanced**: Context-aware command interpretation
 5. **Open Source**: Transparent, customizable, community-driven
 
-This architecture positions Zeus_STT as the leading privacy-focused, memory-enhanced voice command system for macOS, combining the best of real-time performance with advanced contextual understanding.
+This architecture positions Zeus VLA as the leading privacy-focused, multimodal Vision Language Action system for macOS, combining continuous visual understanding with natural language processing for direct action execution across all applications.

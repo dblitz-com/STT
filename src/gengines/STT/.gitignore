@@ -18,3 +18,29 @@ Models/
 # Logs
 *.log
 *.err
+
+# Environment variables (contains sensitive API keys)
+.env
+.env.local
+.env.production
+.env.staging
+
+# Python virtual environments
+venv/
+venv_*/
+__pycache__/
+*.pyc
+*.pyo
+
+# App bundles and builds
+*.app/
+Zeus_STT.app/
+
+# Memory service runtime
+memory_server.log
+
+# Reverse-engineered repos (for analysis only, not for commit)
+cheating-daddy/
+glass/
+clueless/
+*.zip
