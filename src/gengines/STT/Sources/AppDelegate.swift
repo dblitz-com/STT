@@ -166,6 +166,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         simpleTest.target = self  // Critical: Set target explicitly
         menu.addItem(simpleTest)
         
+        // Add debug/test options in development builds
+        #if DEBUG
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "--- Debug Options ---", action: nil, keyEquivalent: ""))
+        
+        let testVisionItem = NSMenuItem(title: "Test Vision Capture", action: #selector(testVisionCapture), keyEquivalent: "V")
+        testVisionItem.keyEquivalentModifierMask = [.command, .shift]
+        testVisionItem.target = self
+        menu.addItem(testVisionItem)
+        #endif
+        
         menu.addItem(NSMenuItem.separator())
         let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.target = NSApp
@@ -194,6 +205,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("✅ STT Dictate initialized after app launch")
         NSLog("🎯 Press Fn key to toggle dictation")
         NSLog("🎤 Menu bar icon should now be visible!")
+        
+        // Setup global keyboard shortcuts for debug features
+        #if DEBUG
+        setupGlobalKeyboardShortcuts()
+        NSLog("✅ Debug keyboard shortcuts registered")
+        #endif
         
         // FIXED: Remove NSApp.run() - AppKit handles run loop automatically
         // The blocking NSApp.run() call prevented menu bar icon from appearing
@@ -291,6 +308,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    @objc func testVisionCapture() {
+        NSLog("🔍 Menu: Test Vision Capture clicked")
+        showNotification(title: "Testing Vision Capture", message: "Starting screen capture test...")
+        
+        // Flash icon to indicate test is starting
+        if let button = statusItem?.button {
+            button.title = "📸"
+            button.needsDisplay = true
+        }
+        
+        // Call the test method in VoiceDictationService
+        dictationService?.testVisionCapture()
+        
+        // Reset icon after delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            if let button = self.statusItem?.button {
+                button.title = "⚡"
+                button.needsDisplay = true
+            }
+        }
+    }
+    
     
     func updateRecordingState(_ isRecording: Bool) {
         DispatchQueue.main.async {
@@ -313,5 +352,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+    
+    #if DEBUG
+    private func setupGlobalKeyboardShortcuts() {
+        NSLog("🔧 Setting up debug keyboard shortcuts...")
+        
+        // Monitor for Cmd+Shift+V globally
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return }
+            
+            // Check for Cmd+Shift+V
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 9 { // 'V' key code
+                NSLog("🔧 DEBUG: Cmd+Shift+V pressed - triggering vision capture test")
+                self.testVisionCapture()
+            }
+        }
+        
+        // Also add local monitor for when app is focused
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            
+            // Check for Cmd+Shift+V
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 9 { // 'V' key code
+                NSLog("🔧 DEBUG: Cmd+Shift+V pressed (local) - triggering vision capture test")
+                self.testVisionCapture()
+                return nil // Consume the event
+            }
+            
+            return event
+        }
+    }
+    #endif
     
 }

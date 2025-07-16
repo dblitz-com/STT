@@ -69,6 +69,15 @@ class VoiceDictationService {
     // Phase 3: Learning system
     private let learningManager = LearningManager()
     
+    // Memory integration (Week 1 implementation)
+    private let memoryService = MemoryXPCService()
+    private var sessionId: String = UUID().uuidString
+    
+    // Vision integration (Week 1 implementation)
+    @available(macOS 12.3, *)
+    private lazy var visionCaptureManager: VisionCaptureManager? = VisionCaptureManager()
+    private var isVisionEnabled = false
+    
     init() {
         // Initialize AI editor paths
         let currentDir = FileManager.default.currentDirectoryPath
@@ -124,6 +133,9 @@ class VoiceDictationService {
         setupHIDMonitor()  // Primary: IOKit low-level detection bypasses Sequoia suppression
         setupNSEventMonitor()  // Fallback: NSEvent monitoring
         setupHotkey()  // Backup: CGEventTap (for debugging)
+        
+        // Initialize vision capture (Week 1 Vision Integration)
+        initializeVisionCapture()
     }
     
     private func applyHidutilRemapping() {
@@ -228,6 +240,143 @@ class VoiceDictationService {
             NSLog("✅ NSEvent monitor setup successful")
         } else {
             NSLog("❌ Failed to setup NSEvent monitor")
+        }
+    }
+    
+    // MARK: - Vision Integration Methods
+    
+    private func initializeVisionCapture() {
+        NSLog("🔍 Initializing vision capture system...")
+        
+        guard #available(macOS 12.3, *) else {
+            NSLog("⚠️ Vision capture requires macOS 12.3+, skipping initialization")
+            return
+        }
+        
+        guard let visionManager = visionCaptureManager else {
+            NSLog("❌ Failed to initialize vision capture manager")
+            return
+        }
+        
+        Task {
+            do {
+                try await visionManager.setupCapture()
+                await MainActor.run {
+                    self.isVisionEnabled = true
+                }
+                NSLog("✅ Vision capture system initialized successfully")
+            } catch {
+                NSLog("❌ Vision capture initialization failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.isVisionEnabled = false
+                }
+            }
+        }
+    }
+    
+    private func captureScreenForVision() async -> Data? {
+        guard isVisionEnabled,
+              #available(macOS 12.3, *),
+              let visionManager = visionCaptureManager else {
+            NSLog("⚠️ Vision capture not available")
+            return nil
+        }
+        
+        do {
+            let imageData = try await visionManager.captureSingleFrame()
+            NSLog("📸 Screen captured for vision processing: \(imageData?.count ?? 0) bytes")
+            return imageData
+        } catch {
+            NSLog("❌ Screen capture failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    private func isVisionCommand(_ text: String) -> Bool {
+        let visionPatterns = [
+            "make this", "make that", "delete this", "delete that",
+            "select this", "select that", "format this", "format that",
+            "click", "tap", "above", "below", "next to", "beside",
+            "on screen", "visible", "button", "link", "image"
+        ]
+        
+        let lowercaseText = text.lowercased()
+        return visionPatterns.contains { pattern in
+            lowercaseText.contains(pattern)
+        }
+    }
+    
+    // MARK: - Vision Testing Methods
+    
+    func testVisionCapture() {
+        NSLog("🧪 Testing Vision Capture System...")
+        
+        guard #available(macOS 12.3, *) else {
+            NSLog("❌ Vision capture requires macOS 12.3+")
+            return
+        }
+        
+        guard let visionManager = visionCaptureManager else {
+            NSLog("❌ Vision capture manager not available")
+            return
+        }
+        
+        Task {
+            do {
+                NSLog("🔧 Testing screen capture...")
+                NSLog("📸 Vision capture in progress...")
+                let startTime = CFAbsoluteTimeGetCurrent()
+                
+                let imageData = try await visionManager.captureSingleFrame()
+                
+                let captureTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+                
+                if let data = imageData {
+                    NSLog("✅ Vision capture test successful!")
+                    NSLog("   Image size: \(data.count) bytes (\(data.count / 1024)KB)")
+                    NSLog("   Capture time: \(String(format: "%.1f", captureTime))ms")
+                    
+                    // Save test image to Desktop for verification
+                    let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
+                    let timestamp = Date().timeIntervalSince1970
+                    let testImageURL = desktopURL.appendingPathComponent("vision_capture_test_\(Int(timestamp)).jpg")
+                    
+                    try data.write(to: testImageURL)
+                    NSLog("✅ Test image saved to: \(testImageURL.path)")
+                    NSLog("✅ Opening image to verify capture quality...")
+                    
+                    // Open the image to verify
+                    NSWorkspace.shared.open(testImageURL)
+                    
+                    // Show notification using NSUserNotification
+                    let notification = NSUserNotification()
+                    notification.title = "Vision Capture Test Successful"
+                    notification.informativeText = "Saved \(data.count / 1024)KB image to Desktop"
+                    notification.soundName = NSUserNotificationDefaultSoundName
+                    NSUserNotificationCenter.default.deliver(notification)
+                } else {
+                    NSLog("❌ Captured data is nil")
+                    
+                    // Show error notification
+                    let notification = NSUserNotification()
+                    notification.title = "Vision Capture Failed"
+                    notification.informativeText = "No image data captured"
+                    notification.soundName = NSUserNotificationDefaultSoundName
+                    NSUserNotificationCenter.default.deliver(notification)
+                }
+                
+            } catch {
+                NSLog("❌ Vision capture test failed: \(error.localizedDescription)")
+                
+                // Show error notification
+                let notification = NSUserNotification()
+                notification.title = "Vision Capture Error"
+                notification.informativeText = error.localizedDescription
+                notification.soundName = NSUserNotificationDefaultSoundName
+                NSUserNotificationCenter.default.deliver(notification)
+            }
+            
+            NSLog("🎤 Vision capture test complete")
         }
     }
     
@@ -1851,6 +2000,32 @@ class VoiceDictationService {
     }
     
     private func processCommands(_ text: String) -> String {
+        // Check if this looks like a complex voice command that needs memory resolution
+        if isComplexVoiceCommand(text) {
+            NSLog("🧠 Detected complex voice command, using memory-enhanced processing")
+            
+            // Get current OCR context (placeholder for now)
+            let ocrText = getCurrentScreenText()
+            let ocrElements = getCurrentOCRElements()
+            
+            // Process with memory enhancement
+            Task {
+                do {
+                    let context = await self.memoryService.resolveContext(command: text, ocrText: ocrText, sessionID: self.sessionId)
+                    
+                    if let context = context {
+                        NSLog("🧠 Memory-enhanced processing result:")
+                        NSLog("   Method: \(context.method)")
+                        NSLog("   Confidence: \(context.confidence)")
+                        NSLog("   Target: \(context.resolvedTarget)")
+                    } else {
+                        NSLog("⚠️ Memory service returned nil context")
+                    }
+                }
+            }
+        }
+        
+        // Continue with basic command processing for backwards compatibility
         var result = text
         
         // Command mappings
@@ -1878,6 +2053,34 @@ class VoiceDictationService {
         }
         
         return result
+    }
+    
+    private func isComplexVoiceCommand(_ text: String) -> Bool {
+        let complexPatterns = [
+            "make this", "make that", "delete this", "delete that", 
+            "select this", "select that", "format this", "format that",
+            "above", "below", "next to", "before", "after",
+            "formal", "casual", "professional", "technical"
+        ]
+        
+        let lowercaseText = text.lowercased()
+        return complexPatterns.contains { pattern in
+            lowercaseText.contains(pattern)
+        }
+    }
+    
+    private func getCurrentScreenText() -> String {
+        // Placeholder: In a full implementation, this would use Apple's Vision framework
+        // to extract text from the current screen
+        return "Sample screen text for memory context"
+    }
+    
+    private func getCurrentOCRElements() -> [[String: Any]] {
+        // Placeholder: In a full implementation, this would return OCR elements with bounding boxes
+        return [
+            ["text": "Sample text", "box": ["x": 10, "y": 20, "width": 100, "height": 30]],
+            ["text": "Another element", "box": ["x": 10, "y": 60, "width": 150, "height": 30]]
+        ]
     }
     
     private func createKeyEvent(for string: String, keyDown: Bool) -> CGEvent? {
