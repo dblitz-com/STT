@@ -172,6 +172,12 @@ class ContinuousVisionService:
             'resize_target': (800, 600) # Performance optimization
         }
         
+        # Glass UI integration
+        self.glass_ui_enabled = True
+        self.glass_ui_url = "http://localhost:5002"  # XPC server endpoint
+        self.last_glass_update = 0
+        self.glass_update_interval = 2.0  # Update every 2 seconds
+        
         # Async processing pipeline configuration
         self.async_config = {
             'frame_queue_size': 10,     # Max frames in queue
@@ -1215,6 +1221,19 @@ class ContinuousVisionService:
             processing_time = time.time() - start_time
             logger.debug(f"🔍 Processed visual context in {processing_time:.2f}s, confidence: {change_confidence:.2f}")
             
+            # Send updates to Glass UI
+            self._send_vision_summary_to_glass(visual_context, change_confidence)
+            self._send_workflow_update_to_glass(workflow_result)
+            
+            # Send health status occasionally
+            if hasattr(self, '_glass_health_counter'):
+                self._glass_health_counter += 1
+            else:
+                self._glass_health_counter = 1
+                
+            if self._glass_health_counter % 10 == 0:  # Every 10 frames
+                self._send_health_status_to_glass()
+            
         except Exception as e:
             logger.error(f"❌ Context processing failed: {e}")
     
@@ -1851,6 +1870,9 @@ Timestamp: {transition.timestamp}
             # Generate contextual response
             response = self._generate_enhanced_contextual_response(ranked_results[:5], temporal_query)
             
+            # Send to Glass UI
+            self._send_temporal_query_to_glass(query, response)
+            
             return response
             
         except Exception as e:
@@ -2109,6 +2131,113 @@ Provide a helpful, contextual response that directly answers the query. Be speci
         except Exception as e:
             logger.error(f"❌ Response generation failed: {e}")
             return f"I found some relevant activities but couldn't generate a proper response: {str(e)}"
+            
+    # Glass UI Integration Methods
+    
+    def _send_glass_ui_update(self, update_type: str, data: Dict[str, Any]):
+        """Send update to Glass UI via XPC server"""
+        if not self.glass_ui_enabled:
+            return
+            
+        # Rate limiting - only update every 2 seconds
+        current_time = time.time()
+        if current_time - self.last_glass_update < self.glass_update_interval:
+            return
+            
+        try:
+            import requests
+            
+            payload = {
+                "type": update_type,
+                **data
+            }
+            
+            response = requests.post(
+                f"{self.glass_ui_url}/glass_update",
+                json=payload,
+                timeout=1.0  # Fast timeout for non-blocking
+            )
+            
+            if response.status_code == 200:
+                self.last_glass_update = current_time
+                logger.debug(f"📱 Glass UI updated: {update_type}")
+            else:
+                logger.warning(f"⚠️ Glass UI update failed: {response.status_code}")
+                
+        except Exception as e:
+            logger.debug(f"🔇 Glass UI update failed (non-critical): {e}")
+            
+    def _send_vision_summary_to_glass(self, context: VisualContext, confidence: float):
+        """Send vision summary to Glass UI"""
+        try:
+            # Create a concise summary for Glass UI
+            summary = context.get('analysis', '')
+            if len(summary) > 200:
+                summary = summary[:197] + "..."
+                
+            app_info = context.get('app_context', {})
+            app_name = app_info.get('name', 'Unknown')
+            
+            glass_summary = f"📱 {app_name}: {summary}"
+            
+            self._send_glass_ui_update("vision_summary", {
+                "summary": glass_summary,
+                "confidence": confidence
+            })
+            
+        except Exception as e:
+            logger.debug(f"🔇 Vision summary to Glass failed: {e}")
+            
+    def _send_workflow_update_to_glass(self, workflow_result: Dict[str, Any]):
+        """Send workflow transition to Glass UI"""
+        try:
+            transition = workflow_result.get('event', 'No change')
+            state = workflow_result.get('new_state', WorkflowState.UNKNOWN)
+            confidence = workflow_result.get('confidence', 0.0)
+            
+            if transition != 'No significant change' and confidence > 0.5:
+                self._send_glass_ui_update("workflow_feedback", {
+                    "transition": f"🔄 {transition}",
+                    "relationship_type": state.name if hasattr(state, 'name') else str(state),
+                    "confidence": confidence
+                })
+                
+        except Exception as e:
+            logger.debug(f"🔇 Workflow update to Glass failed: {e}")
+            
+    def _send_health_status_to_glass(self):
+        """Send system health status to Glass UI"""
+        try:
+            # Get system metrics
+            memory_usage = psutil.virtual_memory().percent
+            cpu_usage = psutil.cpu_percent(interval=0.1)
+            
+            # Calculate processing latency (rough estimate)
+            processing_latency = int(1000 / self.capture_fps)  # ms per frame
+            
+            self._send_glass_ui_update("health_status", {
+                "memory_mb": int(memory_usage),
+                "cpu_percent": int(cpu_usage),
+                "latency_ms": processing_latency
+            })
+            
+        except Exception as e:
+            logger.debug(f"🔇 Health status to Glass failed: {e}")
+            
+    def _send_temporal_query_to_glass(self, query: str, result: str):
+        """Send temporal query result to Glass UI"""
+        try:
+            # Truncate result if too long
+            if len(result) > 300:
+                result = result[:297] + "..."
+                
+            self._send_glass_ui_update("temporal_query", {
+                "query": query,
+                "result": result
+            })
+            
+        except Exception as e:
+            logger.debug(f"🔇 Temporal query to Glass failed: {e}")
 
 
 # Global continuous vision service with PILLAR 1 capabilities

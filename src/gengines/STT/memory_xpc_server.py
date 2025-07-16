@@ -485,6 +485,135 @@ def pillar1_health_endpoint():
             "error": str(e)
         }), 500
 
+# Glass UI State Management
+glass_ui_state = {
+    "active": False,
+    "current_mode": "hidden",
+    "last_update": None,
+    "content": {}
+}
+
+@app.route('/glass_update', methods=['POST'])
+def glass_update():
+    """Send updates to Glass UI"""
+    global glass_ui_state
+    
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+            
+        # Update Glass UI state
+        glass_ui_state["last_update"] = time.time()
+        glass_ui_state["active"] = True
+        
+        # Handle different update types
+        update_type = data.get("type", "vision_summary")
+        
+        if update_type == "vision_summary":
+            glass_ui_state["current_mode"] = "visionSummary"
+            glass_ui_state["content"] = {
+                "visionSummary": data.get("summary", ""),
+                "visionConfidence": data.get("confidence", 0.0)
+            }
+            
+        elif update_type == "temporal_query":
+            glass_ui_state["current_mode"] = "temporalQuery"
+            glass_ui_state["content"] = {
+                "temporalQuery": data.get("query", ""),
+                "temporalResult": data.get("result", "")
+            }
+            
+        elif update_type == "workflow_feedback":
+            glass_ui_state["current_mode"] = "workflowFeedback"
+            glass_ui_state["content"] = {
+                "workflowTransition": data.get("transition", ""),
+                "relationshipType": data.get("relationship_type", ""),
+                "relationshipConfidence": data.get("confidence", 0.0)
+            }
+            
+        elif update_type == "health_status":
+            glass_ui_state["current_mode"] = "healthStatus"
+            glass_ui_state["content"] = {
+                "memoryUsage": data.get("memory_mb", 0),
+                "cpuUsage": data.get("cpu_percent", 0),
+                "latency": data.get("latency_ms", 0)
+            }
+            
+        return jsonify({
+            "success": True,
+            "glass_ui_state": glass_ui_state,
+            "timestamp": time.time()
+        })
+        
+    except Exception as e:
+        logger.error(f"Glass UI update failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/glass_query', methods=['GET'])
+def glass_query():
+    """Query current Glass UI state"""
+    global glass_ui_state
+    
+    try:
+        # Check if Glass UI is stale (no updates for 30 seconds)
+        if glass_ui_state["last_update"]:
+            time_since_update = time.time() - glass_ui_state["last_update"]
+            if time_since_update > 30:
+                glass_ui_state["active"] = False
+                glass_ui_state["current_mode"] = "hidden"
+                
+        return jsonify({
+            "success": True,
+            "glass_ui_state": glass_ui_state,
+            "timestamp": time.time()
+        })
+        
+    except Exception as e:
+        logger.error(f"Glass UI query failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/glass_health', methods=['GET'])
+def glass_health():
+    """Check Glass UI health and connectivity"""
+    global glass_ui_state
+    
+    try:
+        # Basic health metrics
+        current_time = time.time()
+        time_since_update = None
+        
+        if glass_ui_state["last_update"]:
+            time_since_update = current_time - glass_ui_state["last_update"]
+            
+        health_status = {
+            "success": True,
+            "glass_ui_available": True,
+            "active": glass_ui_state["active"],
+            "current_mode": glass_ui_state["current_mode"],
+            "last_update": glass_ui_state["last_update"],
+            "time_since_update": time_since_update,
+            "is_stale": time_since_update > 30 if time_since_update else False,
+            "content_keys": list(glass_ui_state["content"].keys()) if glass_ui_state["content"] else [],
+            "timestamp": current_time
+        }
+        
+        return jsonify(health_status)
+        
+    except Exception as e:
+        logger.error(f"Glass UI health check failed: {e}")
+        return jsonify({
+            "success": False,
+            "glass_ui_available": False,
+            "error": str(e)
+        }), 500
+
 def main():
     """Run the memory XPC server"""
     import argparse
@@ -516,6 +645,10 @@ def main():
     logger.info(f"   POST /query_temporal - Answer temporal queries about past activities")
     logger.info(f"   GET  /workflow_status - Get current workflow status and stats")
     logger.info(f"   GET  /pillar1_health - Health check for PILLAR 1 components")
+    logger.info(f"🥽 Glass UI endpoints:")
+    logger.info(f"   POST /glass_update - Send updates to Glass UI (vision, temporal, workflow, health)")
+    logger.info(f"   GET  /glass_query - Query current Glass UI state")
+    logger.info(f"   GET  /glass_health - Check Glass UI health and connectivity")
     
     # Run Flask server
     app.run(

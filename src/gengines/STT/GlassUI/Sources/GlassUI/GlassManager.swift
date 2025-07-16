@@ -285,11 +285,11 @@ public class GlassManager: ObservableObject {
     }
     
     private func setupXPCCommunication() {
-        // Disable XPC polling for now to avoid crashes
-        // xpcTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-        //     self?.pollXPCUpdates()
-        // }
-        print("🔌 XPC communication disabled for testing")
+        // Enable XPC polling for Glass UI updates
+        xpcTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.pollGlassUIUpdates()
+        }
+        print("🔌 XPC communication enabled for Glass UI updates")
     }
     
     private func setupPerformanceMonitoring() {
@@ -509,6 +509,67 @@ public class GlassManager: ObservableObject {
                 NSEvent.removeMonitor(monitor)
                 keyboardMonitor = nil
             }
+        }
+    }
+    
+    // MARK: - XPC Communication
+    
+    /// Poll for Glass UI updates from the XPC server
+    private func pollGlassUIUpdates() {
+        guard isInitialized else { return }
+        
+        Task {
+            do {
+                let url = URL(string: "\(xpcBaseURL)/glass_query")!
+                let (data, _) = try await URLSession.shared.data(from: url)
+                
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let success = json["success"] as? Bool,
+                   success,
+                   let glassState = json["glass_ui_state"] as? [String: Any],
+                   let active = glassState["active"] as? Bool,
+                   active,
+                   let content = glassState["content"] as? [String: Any] {
+                    
+                    await MainActor.run {
+                        updateGlassUIFromXPC(content)
+                    }
+                }
+            } catch {
+                // Silently handle XPC errors to avoid spam
+            }
+        }
+    }
+    
+    /// Update Glass UI from XPC data
+    @MainActor
+    private func updateGlassUIFromXPC(_ content: [String: Any]) {
+        if let visionSummary = content["visionSummary"] as? String {
+            let confidence = content["visionConfidence"] as? Double ?? 0.0
+            glassViewModel?.showVisionSummary(visionSummary, confidence: confidence)
+            showGlass()
+        }
+        
+        if let temporalQuery = content["temporalQuery"] as? String {
+            glassViewModel?.showTemporalQuery(temporalQuery)
+            if let temporalResult = content["temporalResult"] as? String {
+                glassViewModel?.showTemporalResult(temporalResult)
+            }
+            showGlass()
+        }
+        
+        if let workflowTransition = content["workflowTransition"] as? String {
+            let relationshipType = content["relationshipType"] as? String ?? ""
+            let confidence = content["relationshipConfidence"] as? Double ?? 0.0
+            glassViewModel?.showWorkflowFeedback(workflowTransition, relationshipType: relationshipType, confidence: confidence)
+            showGlass()
+        }
+        
+        if let memoryUsage = content["memoryUsage"] as? Int {
+            let cpuUsage = content["cpuUsage"] as? Int ?? 0
+            let latency = content["latency"] as? Int ?? 0
+            glassViewModel?.showHealthStatus(memory: memoryUsage, cpu: cpuUsage, latency: latency)
+            showGlass()
         }
     }
     
