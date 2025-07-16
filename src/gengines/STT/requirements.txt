@@ -44,3 +44,4 @@ python-dotenv
 tenacity
 watchdog
 pyperclip
+beautifulsoup4

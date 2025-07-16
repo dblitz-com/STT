@@ -191,8 +191,11 @@ STT/
 - **Retention**: Configurable data lifecycle
 
 ## 🐛 Known Issues & Solutions
-1. **High Memory Usage** (350MB vs 200MB target)
-   - Solution: Implement lazy loading, process separation
+1. **spaCy Memory Usage** (383MB from temporal parser vs 200MB target)
+   - Root cause: `en_core_web_sm` model = 383MB (87% of total memory)
+   - Research solution: Custom minimal spaCy (blank + NER + parser) = ~80MB
+   - Alternative: NLTK + dateutil approach = <10MB  
+   - Status: Documented, not blocking current work
    
 2. **PyObjC Import Errors**
    - Solution: Use fallback constants for older versions
