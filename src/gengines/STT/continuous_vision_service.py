@@ -172,43 +172,53 @@ class ContinuousVisionService:
         
         # Initialize Mem0 with Weaviate config (following official documentation)
         try:
-            # Configure Mem0 + Weaviate using correct format
-            config = {
-                "vector_store": {
-                    "provider": "weaviate",
-                    "config": {
-                        "collection_name": "zeus_vla_workflows",
-                        "cluster_url": "http://localhost:8080",
-                        "auth_client_secret": None,
-                    }
-                },
-                "graph_store": {
-                    "provider": "neo4j",
-                    "config": {
-                        "url": os.getenv('NEO4J_URI', 'bolt://localhost:7687'),
-                        "username": os.getenv('NEO4J_USERNAME', 'neo4j'),
-                        "password": os.getenv('NEO4J_PASSWORD', 'testpassword123')
-                    }
-                },
-                "llm": {
-                    "provider": "openai",
-                    "config": {
-                        "model": "gpt-4o-mini",
-                        "api_key": os.getenv("OPENAI_API_KEY")
-                    }
-                },
-                "embedder": {
-                    "provider": "openai",
-                    "config": {
-                        "model": "text-embedding-3-small",
-                        "api_key": os.getenv("OPENAI_API_KEY")
-                    }
-                },
-                "version": "v1.1"
-            }
-            
-            self.mem0_client = mem0.Memory.from_config(config)
-            logger.info("✅ Mem0 initialized with Weaviate + Neo4j (official format)")
+            # Test Weaviate connection first
+            import weaviate
+            weaviate_client = weaviate.connect_to_local()
+            if weaviate_client.is_ready():
+                logger.info("✅ Weaviate connection verified")
+                weaviate_client.close()
+                
+                # Configure Mem0 + Weaviate using correct format
+                config = {
+                    "vector_store": {
+                        "provider": "weaviate",
+                        "config": {
+                            "collection_name": "zeus_vla_workflows",
+                            "cluster_url": "http://localhost:8080",
+                            "auth_client_secret": None,
+                        }
+                    },
+                    "graph_store": {
+                        "provider": "neo4j",
+                        "config": {
+                            "url": os.getenv('NEO4J_URI', 'bolt://localhost:7687'),
+                            "username": os.getenv('NEO4J_USERNAME', 'neo4j'),
+                            "password": os.getenv('NEO4J_PASSWORD', 'testpassword123')
+                        }
+                    },
+                    "llm": {
+                        "provider": "openai",
+                        "config": {
+                            "model": "gpt-4o-mini",
+                            "api_key": os.getenv("OPENAI_API_KEY")
+                        }
+                    },
+                    "embedder": {
+                        "provider": "openai",
+                        "config": {
+                            "model": "text-embedding-3-small",
+                            "api_key": os.getenv("OPENAI_API_KEY")
+                        }
+                    },
+                    "version": "v1.1"
+                }
+                
+                self.mem0_client = mem0.Memory.from_config(config)
+                logger.info("✅ Mem0 initialized with Weaviate + Neo4j (official format)")
+            else:
+                raise Exception("Weaviate server not ready")
+                
         except Exception as e:
             logger.error(f"❌ Mem0 Weaviate initialization failed: {e}")
             # Fallback to default config
