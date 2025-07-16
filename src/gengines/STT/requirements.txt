@@ -1,0 +1,46 @@
+# Core dependencies for Zeus VLA - PILLAR 1
+structlog
+numpy
+opencv-python
+scikit-image
+scikit-learn
+psutil
+lz4
+pyobjc  # For macOS APIs
+spacy
+fuzzywuzzy
+python-Levenshtein
+python-dateutil
+nltk
+textstat
+
+# Memory and storage
+mem0ai
+weaviate-client==4.5.7
+langchain-neo4j
+rank-bm25
+neo4j
+graphiti-core
+
+# Vision and ML
+Pillow
+litellm
+
+# WhisperKit and STT dependencies
+openai-whisper
+torch
+torchaudio
+pyaudio
+SpeechRecognition
+webrtcvad
+
+# API and server
+flask
+flask-cors
+requests
+
+# Utils
+python-dotenv
+tenacity
+watchdog
+pyperclip
