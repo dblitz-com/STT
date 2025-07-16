@@ -3,12 +3,31 @@
 ## Project Overview  
 Open-source Vision Language Action system for Mac that intercepts the Fn key to toggle dictation, providing **multimodal context-aware commands** with universal text manipulation across all applications through continuous visual monitoring, natural language understanding, and direct action execution.
 
-## 🎉 CURRENT STATUS: MEMORY COMPLETE, VISION IN PROGRESS
-✅ **Memory-Enhanced Commands**: Mem0 + XPC bridge working for context resolution  
-✅ **Real-time Performance**: <50ms memory queries, <500ms total voice-to-action latency  
-✅ **Complex Command Detection**: "make this formal", "delete the text above", spatial references  
-✅ **Vision Capture Working**: ScreenCaptureKit integration tested - 342KB optimized images
-🚀 **Next Priority**: Deploy Qwen2-VL local VLM and connect to voice pipeline  
+## 🎉 CURRENT STATUS: COMPONENTS BUILT, VLA INTEGRATION PENDING
+
+### ✅ What's Actually Working:
+- **Memory System**: Mem0 + XPC bridge with <50ms query latency  
+- **Voice Recognition**: WhisperKit with complex command detection
+- **Vision Capture**: ScreenCaptureKit with 384px optimization (342KB images)
+- **Continuous Vision**: Always-on monitoring with GPT-4.1-mini (>95% accuracy)
+- **Vision XPC API**: All endpoints working on port 5003
+- **Text Manipulation**: CGEvent simulation for universal text insertion
+
+### ⚠️ Partially Implemented:
+- **Mock Graphiti**: Temporary spatial relationships (not real Graphiti)
+- **Vision Storage**: Saving to Mem0 but not integrated with voice commands
+- **Separate Systems**: Vision and voice work independently, not as VLA
+
+### ❌ Not Yet Implemented:
+- **VLA Pipeline**: Vision + Language → Action integration missing
+- **processVLACommand**: Core multimodal processing function doesn't exist
+- **Voice→Vision Connection**: Swift doesn't call vision XPC endpoints
+- **Real Graphiti**: Using mock implementation only
+- **Weaviate Backend**: Postponed due to import conflicts
+- **End-to-End Testing**: Can't test full VLA flow yet
+
+### 🚀 Next Priority: 
+**Connect the pieces!** Implement processVLACommand to create true VLA system  
 
 ## Key Features
 - **Memory-Enhanced Voice Commands**: Resolve "this", "above", "below" references using Mem0 + spatial relationships
@@ -19,35 +38,55 @@ Open-source Vision Language Action system for Mac that intercepts the Fn key to 
 
 ## 🧠 Memory Integration Architecture
 
-### Core Memory Stack (COMPLETED)
+### Core Memory Stack 
+#### ✅ Working:
 - **Mem0 Integration**: Conversation compression, personalization, and context search
 - **Swift XPC Bridge**: `MemoryXPCService.swift` provides <50ms Python memory queries
 - **Memory Service**: `memory_service.py` handles context resolution and spatial relationships  
-- **Mock Graphiti**: Lightweight spatial relationships for "above", "below", "next to" commands
 - **Complex Command Detection**: Automatic pattern matching for memory-enhanced processing
 
-### Zeus VLA Pipeline
+#### ⚠️ Mock Implementation:
+- **Mock Graphiti**: Temporary spatial relationships for "above", "below", "next to" commands
+  - Real Graphiti integration not implemented
+  - Using simple coordinate-based detection instead
+
+### Zeus VLA Pipeline (GOAL - NOT YET CONNECTED)
 ```
 VISION (Continuous) + LANGUAGE (Voice/Text) → Context Resolution → ACTION (Direct Manipulation)
      ↓                        ↓                      ↓                    ↓
 Screen Monitoring    "make this formal"      XPC Memory+Vision     CGEvent text
   Always-on           Natural language         <50ms lookup         manipulation
+  ✅ WORKING          ✅ WORKING              ⚠️ SEPARATE           ✅ WORKING
+                    ❌ NOT CONNECTED INTO UNIFIED VLA PIPELINE ❌
 ```
 
-### Performance Metrics (ACHIEVED)
+### Performance Metrics 
+#### ✅ Achieved (Measured):
 - **Memory Query Latency**: <50ms via XPC bridge
-- **Total Voice-to-Action**: <500ms end-to-end
-- **Context Resolution**: 90% accuracy for spatial references
+- **Vision Query Latency**: <305ms via GPT-4.1-mini
+- **Voice Recognition**: <2s via WhisperKit
 - **Memory Processing**: Real-time without blocking voice input
 
-## 🎥 Vision Integration Architecture (IN PROGRESS)
+#### ❌ Not Yet Measured (VLA Not Connected):
+- **Total VLA Latency**: Target <500ms (can't measure - pipeline incomplete)
+- **Context Resolution**: Target 90% accuracy for spatial references
+- **Multimodal Fusion**: Unknown (not implemented)
 
-### Week 1 Implementation Status
-✅ **ScreenCaptureKit Integration**: Native macOS screen capture with `VisionCaptureManager.swift`
-✅ **Image Optimization**: Glass-style 384px height, 80% JPEG quality for optimal token usage
-✅ **Test Infrastructure**: Debug menu items and Cmd+Shift+V shortcut for vision capture testing
-✅ **Permission Handling**: Solved app-bundle permission requirements with build-dev.sh
-✅ **Capture Verification**: Successfully tested - captures 342KB optimized images from 1512x982 screen
+## 🎥 Vision Integration Architecture
+
+### ✅ Week 1 Components Built:
+- **ScreenCaptureKit Integration**: Native macOS screen capture with `VisionCaptureManager.swift`
+- **Image Optimization**: Glass-style 384px height, 80% JPEG quality (342KB images)
+- **Test Infrastructure**: Debug menu items and Cmd+Shift+V shortcut for testing
+- **Permission Handling**: Solved app-bundle permission requirements
+- **GPT-4.1-mini Vision**: >95% accuracy via LiteLLM (replaced local VLMs)
+- **Continuous Monitoring**: Always-on vision service with adaptive FPS
+- **Vision XPC API**: Full REST endpoints on port 5003
+
+### ❌ Week 1 Integration Missing:
+- **Voice → Vision Connection**: Components exist but aren't wired together
+- **processVLACommand**: The function to unify vision + language doesn't exist
+- **Multimodal Context**: No fusion of visual and language understanding
 
 ### Current Implementation Details
 
@@ -90,26 +129,47 @@ class VisionCaptureManager: NSObject, ObservableObject {
 2. Debug build includes test triggers within the app itself
 3. Permissions granted to `com.stt.dictate.dev` for development testing
 
-### Zeus VLA Architecture (IMPLEMENTED)
+### Zeus VLA Architecture (TARGET - NOT YET IMPLEMENTED)
 ```
 VISION (Always-On) + LANGUAGE (Voice Commands) → Multimodal Analysis → ACTION
         ↓                    ↓                          ↓                 ↓
 Continuous Screen     "delete this text"         GPT-4.1-mini       Direct text
   Monitoring          Spatial reference           via LiteLLM        manipulation
+    ✅ WORKING           ✅ WORKING              ✅ WORKING         ✅ WORKING
+                      ❌ NOT CONNECTED TO CREATE VLA PIPELINE ❌
 ```
 
-### Next Steps (Week 1 Remaining Tasks)
-🚀 **Deploy Qwen2-VL**: Set up local VLM via Ollama for privacy-first processing
-🚀 **XPC Bridge Extension**: Add vision query support to existing MemoryXPCService
-🚀 **Voice → Vision Integration**: Connect visual commands to capture pipeline
+**Current Reality**: Each component works in isolation. Vision monitors continuously, language processes commands, and actions manipulate text - but they don't communicate to form a unified VLA system.
 
-### What to Build Next
-1. **Install Qwen2-VL via Ollama**:
-   ```bash
-   ollama pull qwen2-vl:7b
-   ```
-2. **Extend XPC Bridge** to handle vision queries with captured images
-3. **Connect Voice Pipeline** to trigger vision capture for "this/that" commands
+### 🔧 What Actually Needs Building (Priority Order)
+
+#### 1. Connect Vision + Language → Action (Create VLA)
+```swift
+// Add to VoiceDictationService.swift
+private func processCommand(_ text: String) async {
+    if isVisionCommand(text) {
+        // Call vision XPC endpoint
+        let visualContext = await queryVisualContextXPC(text)
+        
+        // Combine vision + language understanding
+        let vlaAction = await resolveMultimodalCommand(text, visualContext)
+        
+        // Execute unified action
+        await executeVLAAction(vlaAction)
+    }
+}
+```
+
+#### 2. Implement Vision XPC Calls in Swift
+- Add HTTP client calls to port 5003 endpoints
+- `/start_continuous_vision` - Start monitoring
+- `/query_visual_context` - Get visual context for command
+- `/stop_continuous_vision` - Stop monitoring
+
+#### 3. Test End-to-End VLA Flow
+- "Delete this text" → Vision locates → Language understands → Action executes
+- Measure actual VLA latency (target <500ms)
+- Validate spatial reference accuracy
 
 # Vision-Based Universal Text Interaction: Multimodal VLM Research Report
 
@@ -853,10 +913,21 @@ python memory_xpc_server.py --port 5002
 
 ## 🚀 Advanced Features
 
-### Memory-Enhanced Commands (WORKING)
-- **"make this formal"** → Analyzes context, applies professional tone
-- **"delete the text above"** → Finds spatial reference, removes target text
-- **"format this paragraph"** → Detects boundaries, applies formatting
+### Commands Status
+
+#### ✅ Working (Memory-Only):
+- **"make this formal"** → Uses Mem0 context (no vision integration yet)
+- **"improve this text"** → AI enhancement via Ollama
+- **Basic commands** → Work without spatial understanding
+
+#### ⚠️ Partially Working (Mock Spatial):
+- **"delete the text above"** → Mock spatial detection (not real vision)
+- **"format this paragraph"** → Text boundaries only (no visual context)
+
+#### ❌ Not Working (Requires VLA):
+- **"delete this"** → Can't resolve visual "this" reference
+- **"move that to the top"** → No visual "that" understanding
+- **"make this paragraph formal"** → Can't see paragraph boundaries visually
 
 ### Context-Aware Processing
 - **App Detection**: Automatic tone matching per application
@@ -920,12 +991,57 @@ python memory_xpc_server.py --port 5002
 - **Total Latency**: <500ms (voice input → screen action)
 - **Accuracy**: >95% (text recognition and command execution)
 
-## Competitive Advantages
+## Competitive Position
 
-1. **Privacy-First**: Complete local processing, no cloud dependencies
-2. **Real-Time Performance**: Sub-500ms latency for voice commands
-3. **Universal Compatibility**: Works across all macOS applications
-4. **Memory-Enhanced**: Context-aware command interpretation
-5. **Open Source**: Transparent, customizable, community-driven
+### ✅ Current Advantages:
+1. **Best Components**: Superior individual V, L, A components vs competitors
+2. **Continuous Vision**: Only solution with always-on monitoring
+3. **GPT-4.1-mini Accuracy**: >95% vision understanding
+4. **Universal Action**: Direct CGEvent manipulation (competitors use overlays)
+5. **Open Source**: Transparent development
+
+### ❌ Current Limitations:
+1. **No VLA Integration**: Components aren't connected (competitors also lack this)
+2. **Mock Graphiti**: Using temporary spatial relationships
+3. **Cloud Vision**: GPT-4.1-mini requires API (local VLMs failed)
+
+### 🎯 When VLA is Connected:
+Will be the **only** true Vision Language Action system with:
+- Continuous visual context + Natural language understanding → Direct action
+- <500ms end-to-end latency
+- Privacy options (local processing for language/action)
+- Open source multimodal platform
 
 This architecture positions Zeus VLA as the leading privacy-focused, multimodal Vision Language Action system for macOS, combining continuous visual understanding with natural language processing for direct action execution across all applications.
+
+---
+
+## 📋 Implementation Status Summary
+
+### Vision (V) ✅ 90% Complete
+- ✅ ScreenCaptureKit integration
+- ✅ Continuous monitoring service  
+- ✅ GPT-4.1-mini analysis (>95% accuracy)
+- ✅ Vision XPC endpoints
+- ❌ Swift integration incomplete
+
+### Language (L) ✅ 95% Complete  
+- ✅ WhisperKit voice recognition
+- ✅ Complex command detection
+- ✅ Memory-based context
+- ✅ AI text enhancement
+- ❌ Vision context fusion missing
+
+### Action (A) ✅ 100% Complete
+- ✅ CGEvent text manipulation
+- ✅ Universal app compatibility
+- ✅ Permission handling
+- ✅ Fast execution (<100ms)
+
+### VLA Integration ❌ 0% Complete
+- ❌ processVLACommand not implemented
+- ❌ Vision-Language fusion missing
+- ❌ No multimodal pipeline
+- ❌ Can't test end-to-end flow
+
+**Bottom Line**: We have the best components but they're not connected. Once integrated, Zeus VLA will be the first true open-source multimodal action system.
