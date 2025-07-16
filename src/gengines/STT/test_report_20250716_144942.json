@@ -1,0 +1,178 @@
+{
+  "timestamp": "2025-07-16T14:49:42.342996",
+  "test_results": {
+    "memory_architecture": {
+      "success": true,
+      "initial_memory_mb": 396.265625,
+      "post_gc_memory_mb": 398.125,
+      "final_memory_mb": 398.125,
+      "memory_efficient": false,
+      "target_mb": 200,
+      "gc_effective": false
+    },
+    "storage_architecture": {
+      "success": true,
+      "file_stored": true,
+      "data_matches": true,
+      "metadata_matches": true,
+      "files_listed": true,
+      "cleanup_worked": true,
+      "centralized_location": true,
+      "storage_stats": {
+        "base_dir": "/Users/devin/.continuous_vision/captures",
+        "file_count": 3,
+        "total_size_mb": 0.00021457672119140625,
+        "files_stored": 1,
+        "files_loaded": 1,
+        "files_cleaned": 0,
+        "encryption_enabled": true,
+        "cleanup_ttl_days": 1,
+        "max_storage_mb": 100
+      }
+    },
+    "vision_service": {
+      "success": true,
+      "singleton_works": true,
+      "lifecycle_works": false,
+      "metrics_available": true,
+      "async_works": false,
+      "health_check": {
+        "status": "error",
+        "healthy": false,
+        "error": "Vision service failed: 'VisionService' object has no attribute 'complete'",
+        "message": "Service unhealthy"
+      }
+    },
+    "pyobjc_integration": {
+      "success": true,
+      "frontmost_detected": true,
+      "running_apps_count": 14,
+      "vision_detection_works": false,
+      "performance_stats": {
+        "requests_total": 3,
+        "requests_success": 3,
+        "requests_failed": 0,
+        "success_rate": 100.0,
+        "average_latency_ms": 2.2575855255126953,
+        "memory_usage_mb": 0.0,
+        "compatibility_level": "full",
+        "thread_restarts": 0,
+        "last_error": null
+      },
+      "thread_stability": true,
+      "compatibility_level": "full"
+    },
+    "gpt_optimization": {
+      "success": true,
+      "token_estimation": 425,
+      "cropping_works": false,
+      "caching_works": true,
+      "cost_calculation": 6.375e-06,
+      "cost_stats": {
+        "total_cost_usd": 0.0,
+        "total_tokens": 0,
+        "total_requests": 0,
+        "hourly_cost_usd": 0,
+        "hourly_tokens": 0,
+        "daily_cost_usd": 0,
+        "daily_tokens": 0,
+        "cache_size": 1,
+        "cache_hit_rate": 0.0,
+        "cost_threshold_usd": 0.05,
+        "over_threshold": false
+      },
+      "cost_efficient": true
+    },
+    "temporal_accuracy": {
+      "success": true,
+      "query_results": [
+        {
+          "query": "What was I doing 5 minutes ago?",
+          "intent": "what",
+          "confidence": 1.0,
+          "keywords": [
+            "minute"
+          ],
+          "parse_time": 0.010226011276245117
+        },
+        {
+          "query": "Show me activities from this morning",
+          "intent": "show",
+          "confidence": 0.9,
+          "keywords": [
+            "activity",
+            "morning"
+          ],
+          "parse_time": 0.00406193733215332
+        },
+        {
+          "query": "When did I last work on coding?",
+          "intent": "when",
+          "confidence": 0.9,
+          "keywords": [
+            "code",
+            "work"
+          ],
+          "parse_time": 0.002305746078491211
+        },
+        {
+          "query": "Find browser activities from yesterday",
+          "intent": "find",
+          "confidence": 0.9,
+          "keywords": [
+            "yesterday",
+            "activity",
+            "browser",
+            "find"
+          ],
+          "parse_time": 0.002088308334350586
+        }
+      ],
+      "average_parse_time": 0.004670500755310059,
+      "ranking_works": true,
+      "performance_stats": {
+        "parse_count": 5,
+        "average_parse_time": 0.004101371765136719,
+        "min_parse_time": 0.001977205276489258,
+        "max_parse_time": 0.01017904281616211,
+        "model_name": "en_core_web_sm",
+        "time_patterns_count": 12,
+        "intent_patterns_count": 7,
+        "context_patterns_count": 6
+      },
+      "accuracy_target_met": true
+    },
+    "integration": {
+      "success": true,
+      "integration_results": {
+        "storage_vision": true,
+        "pyobjc_gpt": false,
+        "temporal_integration": true,
+        "memory_controlled": true,
+        "load_test": true
+      },
+      "initial_memory_mb": 506.125,
+      "final_memory_mb": 508.53125,
+      "memory_increase_mb": 2.40625,
+      "all_components_working": false
+    }
+  },
+  "performance_metrics": {
+    "total_test_time": 6.862436056137085,
+    "current_memory_mb": 501.5,
+    "memory_target_met": false,
+    "success_rate": 100.0,
+    "successful_tests": 7,
+    "total_tests": 7,
+    "performance_grade": "D"
+  },
+  "summary": {
+    "all_tests_passed": true,
+    "memory_target_met": false,
+    "performance_grade": "D",
+    "recommendations": [
+      "Consider implementing lazy loading for heavy components",
+      "Add process isolation for memory-intensive operations"
+    ]
+  }
+}
