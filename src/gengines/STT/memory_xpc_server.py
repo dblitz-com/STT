@@ -14,7 +14,8 @@ from memory_service import MemoryService, MemoryXPCService
 from vision_service import VisionService, detect_visual_references, analyze_spatial_command
 from continuous_vision_service import (
     start_continuous_vision, stop_continuous_vision, query_visual_context,
-    continuous_vision
+    continuous_vision, detect_workflow, summarize_recent_activity,
+    query_temporal, get_workflow_status
 )
 
 # Configure logging
@@ -347,6 +348,143 @@ def query_visual_context_endpoint():
             "error": str(e)
         }), 500
 
+# PILLAR 1: Always-On Vision Workflow Understanding Endpoints
+
+@app.route('/detect_workflow', methods=['POST'])
+def detect_workflow_endpoint():
+    """Detect workflow patterns from screen capture"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        image_path = data.get('image_path', '')
+        if not image_path:
+            return jsonify({"error": "Image path is required"}), 400
+        
+        start_time = time.time()
+        
+        # Detect workflow patterns
+        result = detect_workflow(image_path)
+        
+        # Add timing
+        result['latency_ms'] = (time.time() - start_time) * 1000
+        
+        logger.info(f"🔍 Workflow detection for {image_path}: {result.get('workflow_result', {}).get('event', 'Unknown')}")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Workflow detection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/summarize_activity', methods=['POST'])
+def summarize_activity_endpoint():
+    """Generate activity summary for specified time window"""
+    try:
+        data = request.get_json()
+        time_window = data.get('time_window', 30) if data else 30
+        
+        start_time = time.time()
+        
+        # Generate activity summary
+        result = summarize_recent_activity(time_window)
+        
+        # Add timing
+        result['latency_ms'] = (time.time() - start_time) * 1000
+        
+        logger.info(f"📊 Activity summary for {time_window}s: {result.get('summary', 'No summary')[:50]}...")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Activity summarization failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/query_temporal', methods=['POST'])
+def query_temporal_endpoint():
+    """Answer temporal queries about past activities"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        query = data.get('query', '')
+        if not query:
+            return jsonify({"error": "Query is required"}), 400
+        
+        start_time = time.time()
+        
+        # Process temporal query
+        result = query_temporal(query)
+        
+        # Add timing
+        result['latency_ms'] = (time.time() - start_time) * 1000
+        
+        logger.info(f"🕐 Temporal query '{query}': {result.get('response', 'No response')[:50]}...")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Temporal query failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/workflow_status', methods=['GET'])
+def workflow_status_endpoint():
+    """Get current workflow status and statistics"""
+    try:
+        start_time = time.time()
+        
+        # Get workflow status
+        result = get_workflow_status()
+        
+        # Add timing
+        result['latency_ms'] = (time.time() - start_time) * 1000
+        
+        logger.info(f"📊 Workflow status: {result.get('current_workflow', {}).get('state', 'Unknown')}")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Workflow status failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/pillar1_health', methods=['GET'])
+def pillar1_health_endpoint():
+    """Health check for PILLAR 1 components"""
+    try:
+        health_status = {
+            "pillar1_available": True,
+            "workflow_detection": True,
+            "activity_summarization": True,
+            "temporal_queries": True,
+            "pattern_learning": True,
+            "mem0_weaviate": continuous_vision.mem0_client is not None,
+            "graphiti_neo4j": continuous_vision.graphiti_client is not None,
+            "current_workflow_state": continuous_vision.current_workflow['state'].name,
+            "current_app": continuous_vision.current_workflow['app'],
+            "transitions_tracked": len(continuous_vision.transition_history),
+            "activity_buffer_size": len(continuous_vision.activity_deque),
+            "timestamp": time.time()
+        }
+        
+        return jsonify(health_status)
+        
+    except Exception as e:
+        logger.error(f"PILLAR 1 health check failed: {e}")
+        return jsonify({
+            "pillar1_available": False,
+            "error": str(e)
+        }), 500
+
 def main():
     """Run the memory XPC server"""
     import argparse
@@ -358,7 +496,7 @@ def main():
     
     args = parser.parse_args()
     
-    logger.info(f"🚀 Starting Zeus_STT Memory + Vision XPC Server on {args.host}:{args.port}")
+    logger.info(f"🚀 Starting Zeus VLA Memory + Vision + PILLAR 1 XPC Server on {args.host}:{args.port}")
     logger.info(f"📡 Memory endpoints:")
     logger.info(f"   POST /resolve_context - Resolve voice command context")
     logger.info(f"   POST /add_context - Add text interaction context")
@@ -372,6 +510,12 @@ def main():
     logger.info(f"   POST /start_continuous_vision - Start always-on vision monitoring")
     logger.info(f"   POST /stop_continuous_vision - Stop continuous vision monitoring")
     logger.info(f"   POST /query_visual_context - Query visual context for voice commands")
+    logger.info(f"🧠 PILLAR 1: Always-On Vision Workflow Understanding endpoints:")
+    logger.info(f"   POST /detect_workflow - Detect workflow patterns from screen")
+    logger.info(f"   POST /summarize_activity - Generate activity summary (30s windows)")
+    logger.info(f"   POST /query_temporal - Answer temporal queries about past activities")
+    logger.info(f"   GET  /workflow_status - Get current workflow status and stats")
+    logger.info(f"   GET  /pillar1_health - Health check for PILLAR 1 components")
     
     # Run Flask server
     app.run(
