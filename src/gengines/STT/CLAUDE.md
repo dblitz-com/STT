@@ -3,11 +3,12 @@
 ## Project Overview  
 Open-source voice-to-text system for Mac that intercepts the Fn key to toggle dictation, providing **memory-enhanced context-aware voice commands** with universal text insertion across all applications.
 
-## 🎉 CURRENT STATUS: MEMORY INTEGRATION COMPLETE
+## 🎉 CURRENT STATUS: MEMORY COMPLETE, VISION IN PROGRESS
 ✅ **Memory-Enhanced Commands**: Mem0 + XPC bridge working for context resolution  
 ✅ **Real-time Performance**: <50ms memory queries, <500ms total voice-to-action latency  
 ✅ **Complex Command Detection**: "make this formal", "delete the text above", spatial references  
-✅ **Production Ready**: Full Swift-Python integration with working memory backend  
+✅ **Vision Capture Working**: ScreenCaptureKit integration tested - 342KB optimized images
+🚀 **Next Priority**: Deploy Qwen2-VL local VLM and connect to voice pipeline  
 
 ## Key Features
 - **Memory-Enhanced Voice Commands**: Resolve "this", "above", "below" references using Mem0 + spatial relationships
@@ -41,11 +42,12 @@ Voice Input → Complex Pattern Detection → XPC Memory Query → Context Resol
 
 ## 🎥 Vision Integration Architecture (IN PROGRESS)
 
-### Week 1 Implementation Status (COMPLETED)
+### Week 1 Implementation Status
 ✅ **ScreenCaptureKit Integration**: Native macOS screen capture with `VisionCaptureManager.swift`
 ✅ **Image Optimization**: Glass-style 384px height, 80% JPEG quality for optimal token usage
 ✅ **Test Infrastructure**: Debug menu items and Cmd+Shift+V shortcut for vision capture testing
 ✅ **Permission Handling**: Solved app-bundle permission requirements with build-dev.sh
+✅ **Capture Verification**: Successfully tested - captures 342KB optimized images from 1512x982 screen
 
 ### Current Implementation Details
 
@@ -97,9 +99,17 @@ Voice Input → Visual Reference Detection → Screen Capture → VLM Analysis �
 ```
 
 ### Next Steps (Week 1 Remaining Tasks)
-⏳ **Deploy Qwen2-VL**: Set up local VLM via Ollama for privacy-first processing
-⏳ **XPC Bridge Extension**: Add vision query support to existing MemoryXPCService
-🔄 **Voice → Vision Integration**: Connect visual commands to capture pipeline
+🚀 **Deploy Qwen2-VL**: Set up local VLM via Ollama for privacy-first processing
+🚀 **XPC Bridge Extension**: Add vision query support to existing MemoryXPCService
+🚀 **Voice → Vision Integration**: Connect visual commands to capture pipeline
+
+### What to Build Next
+1. **Install Qwen2-VL via Ollama**:
+   ```bash
+   ollama pull qwen2-vl:7b
+   ```
+2. **Extend XPC Bridge** to handle vision queries with captured images
+3. **Connect Voice Pipeline** to trigger vision capture for "this/that" commands
 
 # Vision-Based Universal Text Interaction: Multimodal VLM Research Report
 
@@ -544,10 +554,11 @@ const response = await streamingLLM.streamChat(messages);
 ## Implementation Roadmap (Based on Reverse Engineering Insights)
 
 ### **Phase 1 (Week 1): Foundation with Proven Patterns**
-- **ScreenCaptureKit Integration**: Use Swift native approach like Glass but with ScreenCaptureKit for better performance
-- **Local VLM Setup**: Deploy Qwen2-VL via Ollama following Glass's local provider pattern
-- **Image Optimization**: Implement Sharp-like processing in Swift/Python for 384px height optimization
-- **XPC Bridge Enhancement**: Extend existing Mem0 XPC to handle vision queries
+- ✅ **ScreenCaptureKit Integration**: Native screen capture with 342KB optimized output
+- ✅ **Image Optimization**: Glass-style 384px height, 80% JPEG quality implemented
+- ✅ **Test Infrastructure**: Debug menu + Cmd+Shift+V shortcut for testing
+- 🚀 **Local VLM Setup**: Deploy Qwen2-VL via Ollama (NEXT PRIORITY)
+- 🚀 **XPC Bridge Enhancement**: Extend existing Mem0 XPC to handle vision queries
 
 ### **Phase 2 (Week 2): Smart Integration Architecture**
 - **Multi-Provider Factory**: Adopt Glass's provider pattern for VLM reliability
@@ -810,10 +821,11 @@ python memory_xpc_server.py --port 5002
 
 ## Future Roadmap
 
-### Phase 1: Vision Integration (Next 3 Weeks)
-- Complete Apple Vision Framework integration
-- Enable visual reference resolution
-- Achieve <500ms voice-to-action latency
+### Phase 1: Vision Integration (Week 1 In Progress)
+- ✅ ScreenCaptureKit integration complete (342KB optimized captures)
+- 🚀 Deploy Qwen2-VL local VLM via Ollama (NEXT)
+- 🚀 Extend XPC bridge for vision queries
+- 🚀 Connect voice commands to vision pipeline
 
 ### Phase 2: Enhanced Spatial Intelligence (Month 2)
 - Multi-display support
@@ -830,6 +842,7 @@ python memory_xpc_server.py --port 5002
 ### Core Architecture
 - `Sources/VoiceDictationService.swift` - Main voice dictation service
 - `Sources/MemoryXPCService.swift` - Swift-Python memory bridge
+- `Sources/VisionCaptureManager.swift` - ScreenCaptureKit vision integration
 - `memory_service.py` - Mem0 integration and context resolution
 - `memory_xpc_server.py` - HTTP XPC server for memory queries
 
@@ -850,6 +863,7 @@ python memory_xpc_server.py --port 5002
 - **Voice Recognition**: <2s (WhisperKit large-v3-turbo)
 - **Context Resolution**: 90% accuracy (spatial references)
 - **Text Insertion**: <100ms (CGEvent simulation)
+- **Vision Capture**: ~100ms (ScreenCaptureKit, 342KB optimized JPEG)
 
 ### Target Metrics (with Vision)
 - **OCR Processing**: <100ms (Apple Vision Framework)
