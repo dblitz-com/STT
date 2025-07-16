@@ -11,6 +11,11 @@ import logging
 from typing import Dict, Any
 from flask import Flask, request, jsonify
 from memory_service import MemoryService, MemoryXPCService
+from vision_service import VisionService, detect_visual_references, analyze_spatial_command
+from continuous_vision_service import (
+    start_continuous_vision, stop_continuous_vision, query_visual_context,
+    continuous_vision
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -19,8 +24,9 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app for HTTP-based XPC simulation
 app = Flask(__name__)
 
-# Global memory service instance
+# Global service instances
 memory_xpc_service = MemoryXPCService()
+vision_service = VisionService(disable_langfuse=True)
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -166,6 +172,181 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
+@app.route('/detect_visual_references', methods=['POST'])
+def detect_visual_references_endpoint():
+    """
+    Check if a voice command contains visual/spatial references
+    
+    Expected JSON:
+    {
+        "command": "make this formal"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        command = data.get('command', '')
+        if not command:
+            return jsonify({"error": "Command is required"}), 400
+        
+        start_time = time.time()
+        
+        # Check if command needs vision analysis
+        needs_vision = detect_visual_references(command)
+        
+        result = {
+            "needs_vision": needs_vision,
+            "command": command,
+            "latency_ms": (time.time() - start_time) * 1000
+        }
+        
+        logger.info(f"🔍 Visual reference check for '{command}': {needs_vision}")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Visual reference detection failed: {e}")
+        return jsonify({
+            "needs_vision": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/analyze_spatial_command', methods=['POST'])
+def analyze_spatial_command_endpoint():
+    """
+    Analyze spatial voice command using vision
+    
+    Expected JSON:
+    {
+        "command": "make this formal",
+        "image_path": "/path/to/screenshot.png",
+        "context": "optional context from memory"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        command = data.get('command', '')
+        image_path = data.get('image_path', '')
+        context = data.get('context')
+        
+        if not command:
+            return jsonify({"error": "Command is required"}), 400
+        if not image_path:
+            return jsonify({"error": "Image path is required"}), 400
+        
+        start_time = time.time()
+        
+        logger.info(f"🔍 Analyzing spatial command: '{command}' with image: {image_path}")
+        
+        # Analyze spatial command with vision
+        result = analyze_spatial_command(image_path, command, context)
+        
+        # Add timing information
+        result['latency_ms'] = (time.time() - start_time) * 1000
+        
+        logger.info(f"✅ Spatial analysis complete in {result['latency_ms']:.1f}ms - Target: {result.get('target_text', 'None')}")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Spatial command analysis failed: {e}")
+        return jsonify({
+            "target_text": None,
+            "spatial_relationship": None,
+            "confidence": 0.0,
+            "bounds": {},
+            "full_analysis": f"Error: {str(e)}",
+            "error": str(e)
+        }), 500
+
+@app.route('/vision_health', methods=['GET'])
+def vision_health():
+    """Check vision service health"""
+    try:
+        # Test vision service with a simple check
+        health_status = {
+            "vision_service_available": vision_service is not None,
+            "continuous_vision_running": continuous_vision.running,
+            "gpt41_mini_configured": True,  # Assuming it's configured if service exists
+            "timestamp": time.time()
+        }
+        
+        return jsonify(health_status)
+        
+    except Exception as e:
+        logger.error(f"Vision health check failed: {e}")
+        return jsonify({
+            "vision_service_available": False,
+            "continuous_vision_running": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/start_continuous_vision', methods=['POST'])
+def start_continuous_vision_endpoint():
+    """Start continuous vision monitoring"""
+    try:
+        result = start_continuous_vision()
+        logger.info("🔍 Started continuous vision monitoring via XPC")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start continuous vision: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+@app.route('/stop_continuous_vision', methods=['POST'])  
+def stop_continuous_vision_endpoint():
+    """Stop continuous vision monitoring"""
+    try:
+        result = stop_continuous_vision()
+        logger.info("⏹️ Stopped continuous vision monitoring via XPC")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to stop continuous vision: {e}")
+        return jsonify({
+            "status": "error", 
+            "error": str(e)
+        }), 500
+
+@app.route('/query_visual_context', methods=['POST'])
+def query_visual_context_endpoint():
+    """Query visual context for voice commands"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        command = data.get('command', '')
+        limit = data.get('limit', 5)
+        
+        if not command:
+            return jsonify({"error": "Command is required"}), 400
+        
+        start_time = time.time()
+        
+        # Query visual context from continuous monitoring
+        result = query_visual_context(command, limit)
+        
+        # Add timing
+        result['latency_ms'] = (time.time() - start_time) * 1000
+        
+        logger.info(f"🔍 Visual context query for '{command}': {result['count']} contexts")
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Visual context query failed: {e}")
+        return jsonify({
+            "contexts": [],
+            "count": 0,
+            "error": str(e)
+        }), 500
+
 def main():
     """Run the memory XPC server"""
     import argparse
@@ -177,12 +358,20 @@ def main():
     
     args = parser.parse_args()
     
-    logger.info(f"🚀 Starting Zeus_STT Memory XPC Server on {args.host}:{args.port}")
+    logger.info(f"🚀 Starting Zeus_STT Memory + Vision XPC Server on {args.host}:{args.port}")
     logger.info(f"📡 Memory endpoints:")
     logger.info(f"   POST /resolve_context - Resolve voice command context")
     logger.info(f"   POST /add_context - Add text interaction context")
     logger.info(f"   GET  /health - Health check")
     logger.info(f"   GET  /memory_stats - Memory system statistics")
+    logger.info(f"🔍 Vision endpoints:")
+    logger.info(f"   POST /detect_visual_references - Check if command needs vision")
+    logger.info(f"   POST /analyze_spatial_command - Analyze spatial command with GPT-4.1-mini")
+    logger.info(f"   GET  /vision_health - Vision service health check")
+    logger.info(f"🎥 Continuous Vision endpoints:")
+    logger.info(f"   POST /start_continuous_vision - Start always-on vision monitoring")
+    logger.info(f"   POST /stop_continuous_vision - Stop continuous vision monitoring")
+    logger.info(f"   POST /query_visual_context - Query visual context for voice commands")
     
     # Run Flask server
     app.run(

@@ -21,29 +21,18 @@ struct MemoryContext: Codable {
     let resolvedTarget: String
     let confidence: Double
     let method: String
-    let spatialContext: [String: Any]?
-    let temporalContext: [String: Any]?
+    let spatialContext: [String: String]?  // Changed from Any to String for Codable compliance
+    let temporalContext: [String: String]?  // Changed from Any to String for Codable compliance
     let error: String?
     
-    enum CodingKeys: String, CodingKey {
-        case resolvedTarget = "resolved_target"
-        case confidence
-        case method
-        case spatialContext = "spatial_context"
-        case temporalContext = "temporal_context"
-        case error
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        resolvedTarget = try container.decodeIfPresent(String.self, forKey: .resolvedTarget) ?? ""
-        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0.0
-        method = try container.decodeIfPresent(String.self, forKey: .method) ?? "fallback"
-        error = try container.decodeIfPresent(String.self, forKey: .error)
-        
-        // Handle Any types for complex contexts (simplified for now)
-        spatialContext = nil
-        temporalContext = nil
+    // Custom initializer for creating instances
+    init(resolvedTarget: String, confidence: Double, method: String, spatialContext: [String: String]? = nil, temporalContext: [String: String]? = nil, error: String? = nil) {
+        self.resolvedTarget = resolvedTarget
+        self.confidence = confidence
+        self.method = method
+        self.spatialContext = spatialContext
+        self.temporalContext = temporalContext
+        self.error = error
     }
 }
 
