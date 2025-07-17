@@ -285,11 +285,7 @@ public class GlassManager: ObservableObject {
                 glassWindow?.contentView = hostingView
                 print("🎨 Glass view setup complete")
                 
-                // Force the view to show some content immediately
-                glassViewModel?.showVisionSummary(
-                    "🚀 Glass UI Initialized! Ready for content display.",
-                    confidence: 1.0
-                )
+                // Glass UI ready - content will be populated via XPC updates
             }
         }
     }
@@ -303,11 +299,11 @@ public class GlassManager: ObservableObject {
     }
     
     private func setupXPCCommunication() {
-        // Enable XPC polling for Glass UI updates (reduced frequency to avoid spam)
-        xpcTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+        // Enable XPC polling for Glass UI updates (1s interval for real-time streaming)
+        xpcTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.pollGlassUIUpdates()
         }
-        print("🔌 XPC communication enabled for Glass UI updates (10s interval)")
+        print("🔌 XPC communication enabled for Glass UI updates (1s interval for real-time)")
     }
     
     private func setupPerformanceMonitoring() {
@@ -542,6 +538,20 @@ public class GlassManager: ObservableObject {
         print("🔄 Manual hide state reset - auto-show enabled again")
     }
     
+    /// Enable/disable auto-hide timeout for Glass UI
+    public func setAutoHideEnabled(_ enabled: Bool) {
+        Task { @MainActor in
+            glassViewModel?.setAutoHideEnabled(enabled)
+        }
+    }
+    
+    /// Set auto-hide delay in seconds
+    public func setAutoHideDelay(_ seconds: TimeInterval) {
+        Task { @MainActor in
+            glassViewModel?.setAutoHideDelay(seconds)
+        }
+    }
+    
     // MARK: - XPC Communication
     
     /// Poll for Glass UI updates from the XPC server
@@ -561,6 +571,8 @@ public class GlassManager: ObservableObject {
                    active,
                    let content = glassState["content"] as? [String: Any] {
                     
+                    print("🔄 XPC: Received content with visionSummary: \(String(content["visionSummary"] as? String ?? "nil").prefix(50))...")
+                    
                     await MainActor.run {
                         updateGlassUIFromXPC(content)
                     }
@@ -574,44 +586,50 @@ public class GlassManager: ObservableObject {
     /// Update Glass UI from XPC data
     @MainActor
     private func updateGlassUIFromXPC(_ content: [String: Any]) {
-        if let visionSummary = content["visionSummary"] as? String {
+        print("🔄 updateGlassUIFromXPC called")
+        var hasNewContent = false
+        
+        if let visionSummary = content["visionSummary"] as? String, !visionSummary.isEmpty {
+            print("🔄 Processing visionSummary: \(String(visionSummary.prefix(50)))...")
             let confidence = content["visionConfidence"] as? Double ?? 0.0
             glassViewModel?.showVisionSummary(visionSummary, confidence: confidence)
-            // Only auto-show if user hasn't manually hidden and auto-show is enabled
-            if autoShowEnabled && !userManuallyHidden {
-                showGlass()
-            }
+            hasNewContent = true
+        } else {
+            print("🔄 No visionSummary or empty: \(content["visionSummary"] as? String ?? "nil")")
         }
         
-        if let temporalQuery = content["temporalQuery"] as? String {
+        if let temporalQuery = content["temporalQuery"] as? String, !temporalQuery.isEmpty {
             glassViewModel?.showTemporalQuery(temporalQuery)
             if let temporalResult = content["temporalResult"] as? String {
                 glassViewModel?.showTemporalResult(temporalResult)
             }
-            // Only auto-show if user hasn't manually hidden and auto-show is enabled
-            if autoShowEnabled && !userManuallyHidden {
-                showGlass()
-            }
+            hasNewContent = true
         }
         
-        if let workflowTransition = content["workflowTransition"] as? String {
+        if let workflowTransition = content["workflowTransition"] as? String, !workflowTransition.isEmpty {
             let relationshipType = content["relationshipType"] as? String ?? ""
             let confidence = content["relationshipConfidence"] as? Double ?? 0.0
             glassViewModel?.showWorkflowFeedback(workflowTransition, relationshipType: relationshipType, confidence: confidence)
-            // Only auto-show if user hasn't manually hidden and auto-show is enabled
-            if autoShowEnabled && !userManuallyHidden {
-                showGlass()
-            }
+            hasNewContent = true
         }
         
-        if let memoryUsage = content["memoryUsage"] as? Int {
+        if let memoryUsage = content["memoryUsage"] as? Int, memoryUsage > 0 {
             let cpuUsage = content["cpuUsage"] as? Int ?? 0
             let latency = content["latency"] as? Int ?? 0
-            glassViewModel?.showHealthStatus(memory: memoryUsage, cpu: cpuUsage, latency: latency)
-            // Only auto-show if user hasn't manually hidden and auto-show is enabled
-            if autoShowEnabled && !userManuallyHidden {
-                showGlass()
+            // Only show health status if there's meaningful data and no vision content
+            if !hasNewContent {
+                glassViewModel?.showHealthStatus(memory: memoryUsage, cpu: cpuUsage, latency: latency)
             }
+            // Health status updates don't trigger auto-show
+        }
+        
+        // Only auto-show if:
+        // 1. We have new content AND
+        // 2. Glass UI is not already visible AND
+        // 3. User hasn't manually hidden AND
+        // 4. Auto-show is enabled
+        if hasNewContent && !isVisible && autoShowEnabled && !userManuallyHidden {
+            showGlass()
         }
     }
     

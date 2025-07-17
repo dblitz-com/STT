@@ -45,9 +45,9 @@ class GlassUIServer:
             "timestamp": time.time()
         }
         
-        # Rate limiting
+        # Rate limiting (reduced for real-time app switching)
         self.last_update_time = 0
-        self.min_update_interval = 0.5  # Minimum 500ms between updates
+        self.min_update_interval = 0.1  # Minimum 100ms between updates for real-time
         
         self._setup_routes()
         

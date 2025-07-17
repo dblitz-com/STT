@@ -33,7 +33,8 @@ public class GlassViewModel: ObservableObject {
     // MARK: - Private Properties
     
     private var hideTimer: Timer?
-    private var autoHideDelay: TimeInterval = 5.0
+    private var autoHideDelay: TimeInterval = 30.0  // Longer delay
+    private var autoHideEnabled: Bool = false  // Disabled by default
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
@@ -103,13 +104,26 @@ public class GlassViewModel: ObservableObject {
     
     /// Disable auto-hide
     public func disableAutoHide() {
+        autoHideEnabled = false
         cancelAutoHide()
+        print("🔧 Auto-hide disabled")
     }
     
     /// Enable auto-hide
     public func enableAutoHide() {
+        autoHideEnabled = true
         if isVisible {
             startAutoHideTimer()
+        }
+        print("🔧 Auto-hide enabled with \(autoHideDelay)s delay")
+    }
+    
+    /// Set auto-hide enabled state
+    public func setAutoHideEnabled(_ enabled: Bool) {
+        if enabled {
+            enableAutoHide()
+        } else {
+            disableAutoHide()
         }
     }
     
@@ -118,15 +132,18 @@ public class GlassViewModel: ObservableObject {
     private func show() {
         print("🧠 GlassViewModel.show() called - setting isVisible = true")
         isVisible = true
-        startAutoHideTimer()
-        print("🧠 GlassViewModel.show() completed - isVisible: \(isVisible)")
+        // Only start auto-hide timer if enabled
+        if autoHideEnabled {
+            startAutoHideTimer()
+        }
+        print("🧠 GlassViewModel.show() completed - isVisible: \(isVisible), autoHide: \(autoHideEnabled)")
     }
     
     private func setupAutoHide() {
-        // Setup auto-hide when visibility changes
+        // Setup auto-hide when visibility changes (only if enabled)
         $isVisible
             .sink { [weak self] visible in
-                if visible {
+                if visible && self?.autoHideEnabled == true {
                     self?.startAutoHideTimer()
                 } else {
                     self?.cancelAutoHide()
