@@ -9,6 +9,9 @@ public class GlassWindow: NSWindow {
     
     private var isGlassVisible: Bool = false
     private var targetOpacity: CGFloat = 0.9
+    private var isDragging: Bool = false
+    private var dragStartLocation: NSPoint = NSZeroPoint
+    private var isDraggingEnabled: Bool = true
     
     // MARK: - Initialization
     
@@ -50,6 +53,11 @@ public class GlassWindow: NSWindow {
         
         isGlassVisible = true
         
+        // Enable dragging when window becomes visible
+        if isDraggingEnabled {
+            self.ignoresMouseEvents = false
+        }
+        
         // Direct alpha setting for immediate visibility (no animation issues)
         self.alphaValue = targetOpacity
         
@@ -67,6 +75,9 @@ public class GlassWindow: NSWindow {
         guard isGlassVisible else { return }
         
         isGlassVisible = false
+        
+        // Disable mouse events when window becomes invisible
+        self.ignoresMouseEvents = true
         
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
@@ -93,16 +104,120 @@ public class GlassWindow: NSWindow {
         }
     }
     
-    // MARK: - Window Behavior Overrides
+    // MARK: - Dragging Controls
     
-    /// Prevent window from becoming key (maintains click-through)
-    public override var canBecomeKey: Bool {
-        return false
+    /// Enable or disable window dragging
+    /// - Parameter enabled: Whether dragging should be enabled
+    public func setDraggingEnabled(_ enabled: Bool) {
+        isDraggingEnabled = enabled
+        
+        // Update mouse event behavior based on dragging state
+        if enabled && isGlassVisible {
+            // When dragging is enabled and window is visible, allow mouse events for dragging
+            self.ignoresMouseEvents = false
+        } else {
+            // When dragging is disabled or window is hidden, maintain click-through
+            self.ignoresMouseEvents = true
+        }
     }
     
-    /// Prevent window from becoming main (maintains click-through)
+    /// Start drag operation
+    private func startDragging(at location: NSPoint) {
+        guard isDraggingEnabled && isGlassVisible else { return }
+        
+        isDragging = true
+        dragStartLocation = location
+        
+        // Temporarily disable click-through during dragging
+        self.ignoresMouseEvents = false
+        
+        print("🖱️ Starting drag at: \(location)")
+    }
+    
+    /// End drag operation
+    private func endDragging() {
+        guard isDragging else { return }
+        
+        isDragging = false
+        dragStartLocation = NSZeroPoint
+        
+        // Re-enable click-through after dragging (if dragging is still enabled)
+        if isDraggingEnabled && isGlassVisible {
+            // Brief delay to allow click events to complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                // Only re-enable click-through if we're not actively dragging
+                if !self.isDragging {
+                    self.ignoresMouseEvents = false  // Keep interactive for dragging
+                }
+            }
+        } else {
+            self.ignoresMouseEvents = true
+        }
+        
+        print("🖱️ Ended dragging")
+    }
+    
+    // MARK: - Mouse Event Overrides
+    
+    /// Handle mouse down events for dragging
+    public override func mouseDown(with event: NSEvent) {
+        if isDraggingEnabled && isGlassVisible {
+            let locationInWindow = event.locationInWindow
+            startDragging(at: locationInWindow)
+        }
+        super.mouseDown(with: event)
+    }
+    
+    /// Handle mouse dragged events for moving window
+    public override func mouseDragged(with event: NSEvent) {
+        guard isDragging && isDraggingEnabled else { 
+            super.mouseDragged(with: event)
+            return 
+        }
+        
+        // Calculate new window position
+        let currentLocation = NSEvent.mouseLocation
+        let newOrigin = NSPoint(
+            x: currentLocation.x - dragStartLocation.x,
+            y: currentLocation.y - dragStartLocation.y
+        )
+        
+        // Constrain to screen bounds
+        if let screen = NSScreen.main {
+            let screenFrame = screen.visibleFrame
+            let windowFrame = self.frame
+            
+            let constrainedX = max(screenFrame.minX, 
+                                 min(newOrigin.x, screenFrame.maxX - windowFrame.width))
+            let constrainedY = max(screenFrame.minY, 
+                                 min(newOrigin.y, screenFrame.maxY - windowFrame.height))
+            
+            self.setFrameOrigin(NSPoint(x: constrainedX, y: constrainedY))
+        } else {
+            self.setFrameOrigin(newOrigin)
+        }
+        
+        super.mouseDragged(with: event)
+    }
+    
+    /// Handle mouse up events to end dragging
+    public override func mouseUp(with event: NSEvent) {
+        if isDragging {
+            endDragging()
+        }
+        super.mouseUp(with: event)
+    }
+    
+    // MARK: - Window Behavior Overrides
+    
+    /// Allow window to become key when dragging is enabled
+    public override var canBecomeKey: Bool {
+        return isDraggingEnabled && isGlassVisible
+    }
+    
+    /// Allow window to become main when dragging is enabled  
     public override var canBecomeMain: Bool {
-        return false
+        return isDraggingEnabled && isGlassVisible
     }
     
     // MARK: - Screen Recording Invisibility
