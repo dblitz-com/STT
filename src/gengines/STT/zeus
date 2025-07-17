@@ -1,0 +1,4 @@
+#!/bin/bash
+# 🚀 Zeus VLA Quick Launcher
+cd "$(dirname "$0")"
+python3 zeus_launcher.py "$@"

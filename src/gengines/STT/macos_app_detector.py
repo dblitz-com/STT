@@ -127,13 +127,29 @@ class MacOSAppDetector:
         self.monitoring_thread = None
         self.is_monitoring = False
         
+        # 🚀 CGWindowList polling thread for real-time detection (Grok's solution)
+        self.polling_thread = None
+        self.is_polling = False
+        self.poll_interval = 0.05  # 50ms = <100ms latency target
+        
+        # 🚀 Observer pattern for real-time app transition callbacks (Grok's solution)
+        self.observers = []  # List of callback functions for immediate Glass UI updates
+        
         # Register for app notifications
         self._register_notifications()
         
         # Initialize with current state
         self._refresh_running_apps()
         
-        logger.info("✅ MacOSAppDetector initialized with native APIs")
+        # 🚀 Start CGWindowList polling for real-time detection (Grok's solution)
+        self.start_polling()
+        
+        logger.info("✅ MacOSAppDetector initialized with CGWindowList polling + Observer pattern")
+    
+    def register_observer(self, callback):
+        """Register callback function for real-time app transition events (Grok's Observer pattern)"""
+        self.observers.append(callback)
+        logger.debug(f"🔄 Registered observer callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
     
     def _register_notifications(self):
         """Register for NSWorkspace notifications"""
@@ -174,18 +190,46 @@ class MacOSAppDetector:
             logger.error(f"❌ Notification registration failed: {e}")
     
     def get_frontmost_app(self) -> Optional[AppInfo]:
-        """Get currently frontmost application with high accuracy"""
+        """Get currently frontmost application using CGWindowList (Grok's solution)"""
         try:
-            frontmost_app = self.workspace.frontmostApplication()
+            # 🚀 Use CGWindowListCopyWindowInfo instead of NSWorkspace (fixes stale data issue)
+            windows = CGWindowListCopyWindowInfo(
+                kCGWindowListOptionOnScreenOnly, 
+                kCGNullWindowID
+            )
+            
+            if not windows:
+                return None
+            
+            # Find frontmost window (layer 0, on screen)
+            frontmost_window = None
+            for window in windows:
+                layer = window.get('kCGWindowLayer', 1)
+                is_onscreen = window.get('kCGWindowIsOnscreen', False)
+                
+                if layer == 0 and is_onscreen:
+                    frontmost_window = window
+                    break
+            
+            if not frontmost_window:
+                return None
+            
+            # Get app from frontmost window's owner PID
+            owner_pid = frontmost_window.get('kCGWindowOwnerPID', 0)
+            if not owner_pid:
+                return None
+            
+            # Convert PID to NSRunningApplication
+            frontmost_app = NSRunningApplication.runningApplicationWithProcessIdentifier_(owner_pid)
             if not frontmost_app:
                 return None
             
-            # Get detailed app info
+            # Get detailed app info  
             app_info = self._extract_app_info(frontmost_app)
             
             # Update current app tracking
             if not self.current_app or self.current_app.bundle_id != app_info.bundle_id:
-                self._handle_app_transition(self.current_app, app_info, 'frontmost_change')
+                self._handle_app_transition(self.current_app, app_info, 'cgwindow_frontmost')
                 self.current_app = app_info
             
             # Update detection accuracy
@@ -197,6 +241,38 @@ class MacOSAppDetector:
         except Exception as e:
             logger.error(f"❌ Frontmost app detection failed: {e}")
             return None
+    
+    def start_polling(self):
+        """Start CGWindowList polling thread for real-time app detection (Grok's solution)"""
+        if self.is_polling:
+            return
+            
+        self.is_polling = True
+        self.polling_thread = threading.Thread(target=self._poll_frontmost, daemon=True)
+        self.polling_thread.start()
+        logger.info("🚀 Started CGWindowList polling for real-time app detection")
+    
+    def stop_polling(self):
+        """Stop polling thread"""
+        self.is_polling = False
+        if self.polling_thread:
+            self.polling_thread.join(timeout=1.0)
+        logger.info("🛑 Stopped CGWindowList polling")
+    
+    def _poll_frontmost(self):
+        """Poll frontmost app using CGWindowList (Grok's solution - 50ms interval)"""
+        while self.is_polling:
+            try:
+                # Use the new CGWindowList-based detection
+                current_app = self.get_frontmost_app()
+                
+                # Observer pattern will handle notifications in get_frontmost_app
+                # No additional processing needed here
+                
+            except Exception as e:
+                logger.debug(f"Poll error: {e}")
+            
+            time.sleep(self.poll_interval)  # 50ms polling = <100ms latency
     
     def _extract_app_info(self, ns_app: NSRunningApplication) -> AppInfo:
         """Extract detailed app information from NSRunningApplication"""
@@ -542,6 +618,13 @@ class MacOSAppDetector:
             self.transition_history.append(transition)
             
             logger.debug(f"🔄 App transition: {event_type} → {to_app.name} (confidence: {to_app.confidence:.2f})")
+            
+            # 🚀 Notify observers for immediate Glass UI updates (Grok's solution)
+            for callback in self.observers:
+                try:
+                    callback(from_app, to_app, event_type)  # Notify service immediately
+                except Exception as e:
+                    logger.error(f"❌ Observer callback failed: {e}")
             
         except Exception as e:
             logger.error(f"❌ Transition handling failed: {e}")
