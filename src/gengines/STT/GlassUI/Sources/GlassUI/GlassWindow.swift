@@ -205,13 +205,14 @@ public class GlassWindow: NSWindow {
 extension GlassWindow {
     /// Convenience initializer for Glass UI with proper sizing
     public convenience init(forScreen screen: NSScreen) {
-        // Create a smaller, centered window instead of fullscreen
+        // Create a right-side window (inspired by glass UI patterns)
         let screenFrame = screen.frame
-        let windowWidth: CGFloat = 400
-        let windowHeight: CGFloat = 300
+        let windowWidth: CGFloat = 400  // Fixed width for right panel
+        let windowHeight: CGFloat = 600  // Reasonable height
+        
         let windowRect = NSRect(
-            x: screenFrame.midX - windowWidth/2,
-            y: screenFrame.midY - windowHeight/2,
+            x: screenFrame.maxX - windowWidth - 20,  // Right side with margin
+            y: screenFrame.midY - windowHeight / 2,  // Vertically centered
             width: windowWidth,
             height: windowHeight
         )

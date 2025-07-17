@@ -16,6 +16,10 @@ public class GlassManager: ObservableObject {
     @Published public var isVisible: Bool = false
     @Published public var currentError: String?
     
+    // User preferences
+    @Published public var autoShowEnabled: Bool = true
+    private var userManuallyHidden: Bool = false
+    
     private var glassWindow: GlassWindow?
     private var glassView: GlassView?
     private var hostingView: NSHostingView<GlassView>?
@@ -149,6 +153,7 @@ public class GlassManager: ObservableObject {
             glassWindow?.fadeOut()
             glassViewModel?.hide()
             isVisible = false
+            userManuallyHidden = true  // Track user manual hide
         }
     }
     
@@ -158,6 +163,7 @@ public class GlassManager: ObservableObject {
             if isVisible {
                 hideGlass()
             } else {
+                userManuallyHidden = false  // Reset manual hide when user shows
                 showGlass()
             }
         }
@@ -176,7 +182,10 @@ public class GlassManager: ObservableObject {
     public func displayVisionSummary(_ summary: String, confidence: Double = 0.0) {
         Task { @MainActor in
             glassViewModel?.showVisionSummary(summary, confidence: confidence)
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
     }
     
@@ -184,7 +193,10 @@ public class GlassManager: ObservableObject {
     public func displayTemporalQuery(_ query: String) {
         Task { @MainActor in
             glassViewModel?.showTemporalQuery(query)
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
     }
     
@@ -199,7 +211,10 @@ public class GlassManager: ObservableObject {
     public func displayWorkflowFeedback(_ transition: String, relationshipType: String = "", confidence: Double = 0.0) {
         Task { @MainActor in
             glassViewModel?.showWorkflowFeedback(transition, relationshipType: relationshipType, confidence: confidence)
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
     }
     
@@ -207,7 +222,10 @@ public class GlassManager: ObservableObject {
     public func displayHealthStatus(memory: Int, cpu: Int, latency: Int) {
         Task { @MainActor in
             glassViewModel?.showHealthStatus(memory: memory, cpu: cpu, latency: latency)
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
     }
     
@@ -285,11 +303,11 @@ public class GlassManager: ObservableObject {
     }
     
     private func setupXPCCommunication() {
-        // Enable XPC polling for Glass UI updates
-        xpcTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        // Enable XPC polling for Glass UI updates (reduced frequency to avoid spam)
+        xpcTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.pollGlassUIUpdates()
         }
-        print("🔌 XPC communication enabled for Glass UI updates")
+        print("🔌 XPC communication enabled for Glass UI updates (10s interval)")
     }
     
     private func setupPerformanceMonitoring() {
@@ -512,6 +530,18 @@ public class GlassManager: ObservableObject {
         }
     }
     
+    /// Enable/disable auto-show behavior
+    public func setAutoShowEnabled(_ enabled: Bool) {
+        autoShowEnabled = enabled
+        print("📱 Auto-show Glass UI: \(enabled ? "enabled" : "disabled")")
+    }
+    
+    /// Reset manual hide state (allows auto-show again)
+    public func resetManualHide() {
+        userManuallyHidden = false
+        print("🔄 Manual hide state reset - auto-show enabled again")
+    }
+    
     // MARK: - XPC Communication
     
     /// Poll for Glass UI updates from the XPC server
@@ -547,7 +577,10 @@ public class GlassManager: ObservableObject {
         if let visionSummary = content["visionSummary"] as? String {
             let confidence = content["visionConfidence"] as? Double ?? 0.0
             glassViewModel?.showVisionSummary(visionSummary, confidence: confidence)
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
         
         if let temporalQuery = content["temporalQuery"] as? String {
@@ -555,21 +588,30 @@ public class GlassManager: ObservableObject {
             if let temporalResult = content["temporalResult"] as? String {
                 glassViewModel?.showTemporalResult(temporalResult)
             }
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
         
         if let workflowTransition = content["workflowTransition"] as? String {
             let relationshipType = content["relationshipType"] as? String ?? ""
             let confidence = content["relationshipConfidence"] as? Double ?? 0.0
             glassViewModel?.showWorkflowFeedback(workflowTransition, relationshipType: relationshipType, confidence: confidence)
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
         
         if let memoryUsage = content["memoryUsage"] as? Int {
             let cpuUsage = content["cpuUsage"] as? Int ?? 0
             let latency = content["latency"] as? Int ?? 0
             glassViewModel?.showHealthStatus(memory: memoryUsage, cpu: cpuUsage, latency: latency)
-            showGlass()
+            // Only auto-show if user hasn't manually hidden and auto-show is enabled
+            if autoShowEnabled && !userManuallyHidden {
+                showGlass()
+            }
         }
     }
     
