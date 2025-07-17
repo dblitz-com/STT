@@ -24,10 +24,8 @@ public struct GlassView: View {
     
     public var body: some View {
         ZStack {
-            // Debug background (visible during testing)
-            Color.red.opacity(0.2)
-                .background(Color.yellow.opacity(0.1))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Transparent background for invisibility
+            Color.clear
             
             // Main content overlay
             mainContent
@@ -37,7 +35,7 @@ public struct GlassView: View {
                 .animation(.easeInOut(duration: 0.3), value: animationOffset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.green.opacity(0.1))  // Another debug background
+        .background(Color.clear)  // Transparent background
         .onReceive(viewModel.$isVisible) { _ in
             updateAnimationOffset()
         }
@@ -52,42 +50,8 @@ public struct GlassView: View {
     private var mainContent: some View {
         switch viewModel.currentMode {
         case .hidden:
-            // Show something even when "hidden" for debugging
-            VStack(spacing: 16) {
-                Text("🎯 Glass UI Active!")
-                    .font(.title)
-                    .foregroundColor(.white)
-                    .fontWeight(.bold)
-                
-                Text("Mode: Hidden")
-                    .font(.headline)
-                    .foregroundColor(.yellow)
-                
-                // Always show debug info
-                VStack(spacing: 8) {
-                    Text("Debug Info:")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
-                    
-                    Text("IsVisible: \(viewModel.isVisible)")
-                        .font(.body)
-                        .foregroundColor(.white)
-                    
-                    Text("CurrentMode: \(viewModel.currentMode.rawValue)")
-                        .font(.body)
-                        .foregroundColor(.white)
-                        
-                    Text("VisionSummary: \(viewModel.visionSummary.isEmpty ? "EMPTY" : "HAS CONTENT")")
-                        .font(.body)
-                        .foregroundColor(.white)
-                }
-                .padding()
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(8)
-            }
-            .padding()
-            .background(Color.purple.opacity(0.8))
-            .cornerRadius(12)
+            // Truly hidden - show nothing
+            Color.clear
             
         case .visionSummary:
             visionSummaryView
@@ -106,189 +70,189 @@ public struct GlassView: View {
     // MARK: - Vision Summary View
     
     private var visionSummaryView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
+            // Compact header like temp/glass
             HStack {
                 Image(systemName: "eye.circle.fill")
                     .foregroundColor(.cyan)
-                    .font(.title2)
-                Text("Vision Analysis")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .font(.system(size: 16))
+                Text("Vision")
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white)
                 Spacer()
-            }
-            
-            Text(viewModel.visionSummary)
-                .font(.title3)
-                .fontWeight(.medium)
-                .foregroundColor(.white)
-                .multilineTextAlignment(.leading)
-                .lineLimit(nil)
-                .padding(.vertical, 8)
-            
-            // Confidence indicator
-            if viewModel.visionConfidence > 0 {
-                HStack {
-                    Text("Confidence:")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white.opacity(0.9))
-                    
-                    ProgressView(value: viewModel.visionConfidence, total: 1.0)
-                        .progressViewStyle(LinearProgressViewStyle(tint: confidenceColor))
-                        .frame(width: 120)
-                    
+                
+                // Compact confidence indicator
+                if viewModel.visionConfidence > 0 {
                     Text("\(Int(viewModel.visionConfidence * 100))%")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(confidenceColor)
                 }
             }
+            .padding(.bottom, 4)
+            
+            // Compact scrollable content 
+            ScrollView {
+                Text(viewModel.visionSummary)
+                    .font(.system(size: 13))
+                    .fontWeight(.regular)
+                    .foregroundColor(.white.opacity(0.9))
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(8)  // Limit lines for compact display
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 180)  // Much more compact
         }
-        .padding(20)
-        .background(glassBackground)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.5), radius: 12, x: 0, y: 6)
+        .padding(12)  // Much smaller padding like temp/glass
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(compactGlassBackground)
+        .cornerRadius(8)  // Smaller corner radius
+        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
     }
     
     // MARK: - Temporal Query View
     
     private var temporalQueryView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "clock.circle.fill")
                     .foregroundColor(.green)
-                Text("Temporal Query")
-                    .font(.headline)
+                    .font(.system(size: 16))
+                Text("Query")
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white)
                 Spacer()
             }
             
             if !viewModel.temporalQuery.isEmpty {
-                Text("Query: \(viewModel.temporalQuery)")
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.8))
+                Text("\(viewModel.temporalQuery)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.7))
                     .italic()
+                    .lineLimit(2)
             }
             
             if !viewModel.temporalResult.isEmpty {
                 ScrollView {
                     Text(viewModel.temporalResult)
-                        .font(.body)
+                        .font(.system(size: 13))
                         .foregroundColor(.white.opacity(0.9))
                         .multilineTextAlignment(.leading)
-                        .lineLimit(nil)
+                        .lineLimit(6)  // Compact limit
                 }
-                .frame(maxHeight: 200)
+                .frame(maxHeight: 120)  // More compact
             } else if viewModel.isLoading {
                 HStack {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.8)
+                        .scaleEffect(0.6)
                     Text("Searching...")
-                        .font(.body)
+                        .font(.system(size: 12))
                         .foregroundColor(.white.opacity(0.7))
                 }
             }
         }
-        .padding(16)
-        .background(glassBackground)
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+        .padding(12)
+        .background(compactGlassBackground)
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
     }
     
     // MARK: - Workflow Feedback View
     
     private var workflowFeedbackView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
                     .foregroundColor(.orange)
-                Text("Workflow Transition")
-                    .font(.headline)
+                    .font(.system(size: 16))
+                Text("Workflow")
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white)
                 Spacer()
             }
             
             if !viewModel.workflowTransition.isEmpty {
                 Text(viewModel.workflowTransition)
-                    .font(.body)
+                    .font(.system(size: 13))
                     .foregroundColor(.white.opacity(0.9))
                     .multilineTextAlignment(.leading)
+                    .lineLimit(3)
             }
             
-            // Relationship indicator
+            // Compact relationship indicator
             if !viewModel.relationshipType.isEmpty {
                 HStack {
                     Text(viewModel.relationshipType.uppercased())
-                        .font(.caption)
-                        .fontWeight(.bold)
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
                         .background(relationshipColor)
-                        .cornerRadius(4)
+                        .cornerRadius(3)
                     
                     Spacer()
                     
                     if viewModel.relationshipConfidence > 0 {
                         Text("\(Int(viewModel.relationshipConfidence * 100))%")
-                            .font(.caption)
+                            .font(.system(size: 11))
                             .foregroundColor(.white.opacity(0.7))
                     }
                 }
             }
         }
-        .padding(16)
-        .background(glassBackground)
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+        .padding(12)
+        .background(compactGlassBackground)
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
     }
     
     // MARK: - Health Status View
     
     private var healthStatusView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "heart.circle.fill")
                     .foregroundColor(healthStatusColor)
-                Text("System Health")
-                    .font(.headline)
+                    .font(.system(size: 16))
+                Text("Health")
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white)
                 Spacer()
             }
             
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+            // Compact grid layout
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 2) {
                 GridRow {
                     Text("Memory:")
-                        .font(.caption)
+                        .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.7))
                     Text("\(viewModel.memoryUsage)MB")
-                        .font(.caption)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
                 }
                 
                 GridRow {
                     Text("CPU:")
-                        .font(.caption)
+                        .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.7))
                     Text("\(viewModel.cpuUsage)%")
-                        .font(.caption)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
                 }
                 
                 GridRow {
                     Text("Latency:")
-                        .font(.caption)
+                        .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.7))
                     Text("\(viewModel.latency)ms")
-                        .font(.caption)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
                 }
             }
         }
-        .padding(12)
-        .background(glassBackground)
+        .padding(10)
+        .background(compactGlassBackground)
         .cornerRadius(8)
         .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
     }
@@ -297,14 +261,28 @@ public struct GlassView: View {
     
     private var glassBackground: some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(Color.black.opacity(0.8))  // More opaque for visibility
+            .fill(Color.black.opacity(0.2))  // Subtle transparent background
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.blue.opacity(0.3))  // Blue tint for testing
+                    .fill(Color.clear)  // Transparent backing
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.white.opacity(0.8), lineWidth: 2)  // Thicker, more visible border
+                    .stroke(Color.white.opacity(0.3), lineWidth: 1)  // Subtle border
+            )
+    }
+    
+    // Compact glass background for temp/glass-style appearance
+    private var compactGlassBackground: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color.black.opacity(0.15))  // More transparent like temp/glass
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)  // Thinner border
             )
     }
     
@@ -360,7 +338,7 @@ struct GlassView_Previews: PreviewProvider {
     static var previews: some View {
         let viewModel = GlassViewModel()
         GlassView(viewModel: viewModel)
-            .frame(width: 400, height: 300)
+            .frame(width: 380, height: 280)  // Match new compact dimensions
             .background(Color.black.opacity(0.1))
             .onAppear {
                 // Preview with sample data

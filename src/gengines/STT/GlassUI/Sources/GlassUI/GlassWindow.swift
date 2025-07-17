@@ -203,16 +203,44 @@ public class GlassWindow: NSWindow {
 // MARK: - Extensions
 
 extension GlassWindow {
-    /// Convenience initializer for Glass UI with proper sizing
+    /// Convenience initializer for Glass UI with temp/glass-inspired compact sizing
     public convenience init(forScreen screen: NSScreen) {
-        // Create a right-side window (inspired by glass UI patterns)
-        let screenFrame = screen.frame
-        let windowWidth: CGFloat = 400  // Fixed width for right panel
-        let windowHeight: CGFloat = 600  // Reasonable height
+        // Match temp/glass compact design - smaller, more centered window
+        let screenFrame = screen.visibleFrame  // Use visibleFrame to respect menu bar/dock
         
+        // temp/glass dimensions: Header 353x47, Listen ~400 width, compact height
+        let windowWidth: CGFloat = 380   // Slightly smaller than temp/glass for better fit
+        let windowHeight: CGFloat = 280  // Much more compact, like temp/glass
+        
+        // Position more centrally like temp/glass, not as a right panel
         let windowRect = NSRect(
-            x: screenFrame.maxX - windowWidth - 20,  // Right side with margin
-            y: screenFrame.midY - windowHeight / 2,  // Vertically centered
+            x: screenFrame.midX - windowWidth / 2,      // Horizontally centered
+            y: screenFrame.midY - windowHeight / 2,     // Vertically centered  
+            width: windowWidth,
+            height: windowHeight
+        )
+        
+        self.init(
+            contentRect: windowRect,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        self.optimizeRendering()
+    }
+    
+    /// Create compact header-style window like temp/glass header (353x47)
+    public convenience init(headerStyleForScreen screen: NSScreen) {
+        let screenFrame = screen.visibleFrame
+        
+        // Match temp/glass header dimensions exactly
+        let windowWidth: CGFloat = 353
+        let windowHeight: CGFloat = 47
+        
+        // Position like temp/glass header - center-top area
+        let windowRect = NSRect(
+            x: screenFrame.midX - windowWidth / 2,
+            y: screenFrame.maxY - windowHeight - 21,  // Near top with margin like temp/glass
             width: windowWidth,
             height: windowHeight
         )
