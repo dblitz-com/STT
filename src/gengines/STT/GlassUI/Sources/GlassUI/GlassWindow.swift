@@ -323,9 +323,9 @@ extension GlassWindow {
         // Match temp/glass compact design - smaller, more centered window
         let screenFrame = screen.visibleFrame  // Use visibleFrame to respect menu bar/dock
         
-        // temp/glass dimensions: Header 353x47, Listen ~400 width, compact height
-        let windowWidth: CGFloat = 380   // Slightly smaller than temp/glass for better fit
-        let windowHeight: CGFloat = 280  // Much more compact, like temp/glass
+        // Enlarged dimensions for full vision content scrolling
+        let windowWidth: CGFloat = 500   // Wider for better readability
+        let windowHeight: CGFloat = 500  // Much taller for full scrollable content
         
         // Position more centrally like temp/glass, not as a right panel
         let windowRect = NSRect(

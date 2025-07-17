@@ -94,6 +94,14 @@ class ZeusLauncher:
             return response.status_code == 200
         except:
             return False
+            
+    def check_glass_http_server(self):
+        """Check Glass UI HTTP server health"""
+        try:
+            response = requests.get("http://localhost:5003/health", timeout=2)
+            return response.status_code == 200
+        except:
+            return False
     
     def check_vision_service(self):
         """Check vision service health (basic process check)"""
@@ -128,7 +136,19 @@ class ZeusLauncher:
         self.log("⏳ Waiting for XPC server...")
         time.sleep(3)
         
-        # 2. Start Continuous Vision Service
+        # 2. Start Glass UI HTTP Server
+        success = self.start_service(
+            "GLASS_HTTP",
+            "python3 glass_ui_http_server.py"
+        )
+        if not success:
+            return False
+            
+        # Wait for HTTP server to start
+        self.log("⏳ Waiting for Glass UI HTTP server...")
+        time.sleep(1)
+        
+        # 3. Start Continuous Vision Service (with WebSocket integration)
         success = self.start_service(
             "VISION",
             "python3 continuous_vision_service.py"
@@ -170,6 +190,7 @@ class ZeusLauncher:
         
         health_checks = {
             "XPC_SERVER": self.check_xpc_server,
+            "GLASS_HTTP": self.check_glass_http_server,
             "VISION": self.check_vision_service,
             "GLASS_UI": self.check_glass_ui
         }
@@ -232,6 +253,10 @@ class ZeusLauncher:
         xpc_healthy = self.check_xpc_server()
         self.log(f"XPC Server: {'✅ Running' if xpc_healthy else '❌ Down'}")
         
+        # Check Glass UI HTTP Server
+        http_healthy = self.check_glass_http_server()
+        self.log(f"Glass UI HTTP Server: {'✅ Running' if http_healthy else '❌ Down'}")
+        
         # Check Vision Service
         vision_running = subprocess.run(
             ["pgrep", "-f", "continuous_vision_service.py"],
@@ -243,7 +268,7 @@ class ZeusLauncher:
         glass_running = self.check_glass_ui()
         self.log(f"Glass UI: {'✅ Running' if glass_running else '❌ Down'}")
         
-        return xpc_healthy and vision_running and glass_running
+        return xpc_healthy and http_healthy and vision_running and glass_running
     
     def stop_all_services(self):
         """Stop all services"""

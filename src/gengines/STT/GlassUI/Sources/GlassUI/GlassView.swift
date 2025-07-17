@@ -90,18 +90,19 @@ public struct GlassView: View {
             }
             .padding(.bottom, 4)
             
-            // Compact scrollable content 
+            // Full scrollable content with no limits
             ScrollView {
                 Text(viewModel.visionSummary)
                     .font(.system(size: 13))
                     .fontWeight(.regular)
                     .foregroundColor(.white.opacity(0.9))
                     .multilineTextAlignment(.leading)
-                    .lineLimit(8)  // Limit lines for compact display
+                    .lineLimit(nil)  // No line limit - show all content
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
             }
-            .frame(maxHeight: 180)  // Much more compact
+            .frame(maxHeight: 400)  // Much larger scroll area
         }
         .padding(12)  // Much smaller padding like temp/glass
         .frame(maxWidth: .infinity, maxHeight: .infinity)

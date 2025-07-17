@@ -180,9 +180,12 @@ class ContinuousVisionService:
         
         # Glass UI integration
         self.glass_ui_enabled = True
-        self.glass_ui_url = "http://localhost:5002"  # XPC server endpoint
+        self.glass_ui_url = "http://localhost:5003"  # Glass UI WebSocket server HTTP fallback
         self.last_glass_update = 0
         self.glass_update_interval = 2.0  # Update every 2 seconds
+        
+        # WebSocket server will be started externally by zeus_launcher
+        self.websocket_server = None
         
         # Async processing pipeline configuration
         self.async_config = {
@@ -2194,13 +2197,14 @@ Provide a helpful, contextual response that directly answers the query. Be speci
     # Glass UI Integration Methods
     
     def _send_glass_ui_update(self, update_type: str, data: Dict[str, Any]):
-        """Send update to Glass UI via XPC server"""
+        """Send update to Glass UI via WebSocket push (real-time) or HTTP fallback"""
         if not self.glass_ui_enabled:
             return
             
         # No rate limiting for real-time streaming
         current_time = time.time()
             
+        # Use HTTP endpoint (WebSocket server handles push internally)
         try:
             import requests
             
@@ -2217,8 +2221,8 @@ Provide a helpful, contextual response that directly answers the query. Be speci
             
             if response.status_code == 200:
                 self.last_glass_update = current_time
-                logger.debug(f"📱 Glass UI updated: {update_type}")
-                # Log the full update content for debugging
+                logger.debug(f"📱 Glass UI updated via HTTP→WebSocket: {update_type}")
+                # Log vision content for debugging
                 if update_type == "vision_summary":
                     logger.info(f"📱 Glass UI vision content: {data.get('summary', 'No summary')}")
             else:
@@ -2228,24 +2232,71 @@ Provide a helpful, contextual response that directly answers the query. Be speci
             logger.debug(f"🔇 Glass UI update failed (non-critical): {e}")
     
     def _on_app_transition_callback(self, from_app, to_app, event_type):
-        """Event-driven callback for immediate Glass UI update (Grok's Observer pattern solution)"""
+        """Event-driven callback for immediate Glass UI update with full vision analysis"""
         try:
             # Get app name for Glass UI update
             app_name = to_app.name if to_app else 'Unknown'
             
-            # Create immediate Glass UI update with new app context
-            glass_summary = f"📱 {app_name}: Screen monitoring active (app switched)"
+            logger.debug(f"🚀 App switched to {app_name} - triggering full vision analysis")
             
-            # Send immediate update to Glass UI, bypassing visual polling
-            self._send_glass_ui_update("vision_summary", {
-                "summary": glass_summary,
-                "confidence": to_app.confidence if to_app else 0.0
-            })
-            
-            logger.debug(f"🚀 Immediate Glass UI update: {event_type} → {app_name} (<100ms latency)")
+            # Force immediate vision analysis of new app instead of generic message
+            # Take a fresh screenshot and analyze the new app's content
+            self._force_vision_analysis_with_context(app_name, f"App switched to {app_name}")
             
         except Exception as e:
             logger.error(f"❌ App transition UI update failed: {e}")
+    
+    def _force_vision_analysis_with_context(self, app_name, context=""):
+        """Force immediate vision analysis with app context"""
+        try:
+            # Capture fresh screenshot
+            screenshot_path = self.capture_screenshot()
+            if not screenshot_path:
+                logger.warning("⚠️ Could not capture screenshot for app transition analysis")
+                return
+            
+            # Perform full vision analysis with app context
+            prompt = f"""Analyze this screenshot for {app_name}. The user just switched to this application.
+
+Provide detailed analysis of:
+1. What is visible on screen in {app_name}
+2. Current content/activity in the app
+3. Spatial layout and UI elements
+4. Any text, images, or interactive elements
+
+Context: {context}
+
+Be comprehensive and specific about what the user can see and interact with."""
+
+            # Use the cached vision service for analysis
+            summary = self.cached_vision_service.analyze_screen_content(screenshot_path, app_name)
+            
+            if summary and summary.strip():
+                # Send detailed analysis to Glass UI
+                self._send_glass_ui_update("vision_summary", {
+                    "summary": summary,
+                    "confidence": 0.9,  # High confidence for fresh analysis
+                    "app_name": app_name
+                })
+                logger.info(f"📱 Full vision analysis sent for {app_name}: {summary[:100]}...")
+            else:
+                # Fallback to basic message if analysis fails
+                fallback_summary = f"📱 {app_name}: App switched - analyzing content..."
+                self._send_glass_ui_update("vision_summary", {
+                    "summary": fallback_summary,
+                    "confidence": 0.5,
+                    "app_name": app_name
+                })
+                
+        except Exception as e:
+            logger.error(f"❌ Force vision analysis failed: {e}")
+            # Send fallback message
+            fallback_summary = f"📱 {app_name}: Screen monitoring active (app switched)"
+            self._send_glass_ui_update("vision_summary", {
+                "summary": fallback_summary,
+                "confidence": 0.3,
+                "app_name": app_name
+            })
     
     def _check_app_change_and_notify(self):
         """Check for app changes and trigger immediate Observer pattern callback (bypasses broken NSWorkspace notifications)"""

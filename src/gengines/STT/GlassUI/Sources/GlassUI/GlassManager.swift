@@ -28,7 +28,7 @@ public class GlassManager: ObservableObject {
     // XPC Communication
     private var xpcTimer: Timer?
     private var xpcSession: URLSession
-    private let xpcBaseURL = "http://localhost:5002"
+    private let xpcBaseURL = "http://localhost:5003"
     private var cancellables = Set<AnyCancellable>()
     
     // Keyboard Shortcuts
@@ -245,7 +245,7 @@ public class GlassManager: ObservableObject {
             print("❌ No screens available - creating window with default frame")
             // Create window with default frame if no screen is available
             glassWindow = GlassWindow(
-                contentRect: NSRect(x: 100, y: 100, width: 400, height: 300),
+                contentRect: NSRect(x: 100, y: 100, width: 500, height: 500),
                 styleMask: [.borderless],
                 backing: .buffered,
                 defer: false
