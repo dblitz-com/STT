@@ -16,7 +16,7 @@ from typing import Dict, Any, Optional, List, Union
 import structlog
 
 # Import zQuery's proven LiteLLM factory
-sys.path.append('/Users/devin/dblitz/engine/src/gengines/zQuery/src/langchain')
+sys.path.append('/Users/devin/dblitz/engine/src/gengines/zQuery/src/agents')
 from llm_factory import get_llm
 
 # Set up logger

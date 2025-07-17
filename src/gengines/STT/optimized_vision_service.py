@@ -94,12 +94,12 @@ class OptimizedVisionService:
         self.activity_update_interval = 10.0  # Update every 10 seconds
         self.last_activity_update = time.time()
         
-        # Adaptive processing
+        # Adaptive processing - MORE AGGRESSIVE FOR REAL-TIME STREAMING
         self.dynamic_fps = 1.0  # Start at 1 FPS
-        self.min_fps = 0.2
+        self.min_fps = 0.5  # Increased minimum FPS
         self.max_fps = 2.0
-        self.quiet_period_threshold = 0.2  # Activity below this = quiet
-        self.active_period_threshold = 0.7  # Activity above this = active
+        self.quiet_period_threshold = 0.05  # Much lower threshold for quiet
+        self.active_period_threshold = 0.3  # Lower threshold for active
         
         # Performance monitoring
         self.gpt_calls_saved = 0
@@ -143,16 +143,16 @@ class OptimizedVisionService:
             change_confidence = frame_data.get('change_confidence', 0.0)
             activity_multiplier = self.current_activity_level
             
-            # Dynamic threshold based on activity
+            # Dynamic threshold based on activity - LOWER FOR REAL-TIME
             if self.current_activity_level < self.quiet_period_threshold:
-                # Quiet period - higher threshold
-                threshold = 0.4
+                # Quiet period - still analyze occasionally
+                threshold = 0.1  # Much lower even when quiet
             elif self.current_activity_level > self.active_period_threshold:
-                # Active period - lower threshold
-                threshold = 0.15
+                # Active period - very responsive
+                threshold = 0.05  # Very low threshold
             else:
                 # Normal activity
-                threshold = 0.25
+                threshold = 0.08  # Lower normal threshold
             
             # Time-based decay (avoid too frequent calls)
             time_since_last = time.time() - self.last_batch_time

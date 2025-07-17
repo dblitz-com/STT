@@ -141,6 +141,9 @@ class ContinuousVisionService:
         self.vision_service = VisionService(disable_langfuse=True)
         self.optimized_vision = OptimizedVisionService(self.vision_service)
         self.app_detector = MacOSAppDetector()
+        # 🚀 Register for real-time app transition callbacks (Grok's Observer pattern)
+        self.app_detector.register_observer(self._on_app_transition_callback)
+        
         self.task_detector = WorkflowTaskDetector()
         self.memory_storage = MemoryOptimizedStorage()
         self.temporal_parser = AdvancedTemporalParser()
@@ -152,6 +155,9 @@ class ContinuousVisionService:
             "start_time": datetime.now(),
             "app": "Unknown"
         }
+        
+        # App change detection for immediate Observer pattern callbacks
+        self.current_app_name = None
         self.transition_history = deque(maxlen=1000)
         self.previous_frames = deque(maxlen=5)  # For pattern detection
         
@@ -937,11 +943,18 @@ class ContinuousVisionService:
                     time.sleep(1.0 / self.capture_fps)
                     continue
                 
+                # 🚀 Check for app changes and trigger immediate Observer pattern callback
+                self._check_app_change_and_notify()
+                
                 # Check for significant changes (content diffing)
                 change_confidence = self._detect_content_change(image_path)
                 
-                # Skip processing if no significant change (research-specified threshold)
+                # ALWAYS send updates to Glass UI for real-time streaming
+                # But skip expensive VLM processing if no significant change
                 if change_confidence < self.ssim_config['change_threshold']:
+                    # Still send lightweight Glass UI update
+                    self._send_lightweight_glass_update(image_path, change_confidence)
+                    
                     # Adjust FPS for static periods (Cheating Daddy improvement)
                     self.capture_fps = max(0.5, self.capture_fps - 0.1)
                     time.sleep(1.0 / self.capture_fps)
@@ -965,14 +978,58 @@ class ContinuousVisionService:
     def _capture_current_screen(self) -> Optional[str]:
         """Capture current screen via XPC to Swift VisionCaptureManager"""
         try:
-            # For now, use existing test image - will integrate with Swift later
+            # Capture actual screen in real-time
+            import pyautogui
+            from PIL import Image
+            
+            # Take screenshot
+            screenshot = pyautogui.screenshot()
+            
+            # Generate unique filename with timestamp
+            timestamp = int(time.time() * 1000)
+            screenshot_path = f"/tmp/zeus_vision_{timestamp}.png"
+            
+            # Resize for faster processing (768px width while maintaining aspect ratio)
+            width = 768
+            aspect_ratio = screenshot.height / screenshot.width
+            height = int(width * aspect_ratio)
+            screenshot = screenshot.resize((width, height), Image.Resampling.LANCZOS)
+            
+            # Save screenshot
+            screenshot.save(screenshot_path)
+            
+            # Clean up old screenshots (keep only last 10)
+            self._cleanup_old_screenshots()
+            
+            return screenshot_path
+            
+        except Exception as e:
+            logger.error(f"❌ Screen capture failed: {e}")
+            # Fallback to test image if real capture fails
             test_image = "/Users/devin/Desktop/vision_test_768.png"
             if os.path.exists(test_image):
                 return test_image
             return None
+    
+    def _cleanup_old_screenshots(self):
+        """Clean up old screenshots to save disk space"""
+        try:
+            import glob
+            # Find all zeus vision screenshots
+            screenshots = glob.glob("/tmp/zeus_vision_*.png")
+            
+            # Sort by timestamp (oldest first)
+            screenshots.sort()
+            
+            # Keep only the last 10
+            if len(screenshots) > 10:
+                for old_screenshot in screenshots[:-10]:
+                    try:
+                        os.remove(old_screenshot)
+                    except:
+                        pass
         except Exception as e:
-            logger.error(f"❌ Screen capture failed: {e}")
-            return None
+            logger.debug(f"Screenshot cleanup error: {e}")
     
     def _detect_content_change(self, image_path: str) -> float:
         """
@@ -1306,8 +1363,10 @@ class ContinuousVisionService:
             # Use MacOSAppDetector for accurate app detection
             frontmost_app = self.app_detector.get_frontmost_app()
             if frontmost_app:
+                logger.debug(f"🔍 Detected app: {frontmost_app.name} (bundle: {frontmost_app.bundle_id})")
                 return frontmost_app.name
             else:
+                logger.debug(f"🔍 No frontmost app detected, returning unknown")
                 return "unknown"
         except Exception as e:
             logger.error(f"❌ App context detection failed: {e}")
@@ -2139,10 +2198,8 @@ Provide a helpful, contextual response that directly answers the query. Be speci
         if not self.glass_ui_enabled:
             return
             
-        # Rate limiting - only update every 2 seconds
+        # No rate limiting for real-time streaming
         current_time = time.time()
-        if current_time - self.last_glass_update < self.glass_update_interval:
-            return
             
         try:
             import requests
@@ -2161,22 +2218,88 @@ Provide a helpful, contextual response that directly answers the query. Be speci
             if response.status_code == 200:
                 self.last_glass_update = current_time
                 logger.debug(f"📱 Glass UI updated: {update_type}")
+                # Log the full update content for debugging
+                if update_type == "vision_summary":
+                    logger.info(f"📱 Glass UI vision content: {data.get('summary', 'No summary')}")
             else:
                 logger.warning(f"⚠️ Glass UI update failed: {response.status_code}")
                 
         except Exception as e:
             logger.debug(f"🔇 Glass UI update failed (non-critical): {e}")
+    
+    def _on_app_transition_callback(self, from_app, to_app, event_type):
+        """Event-driven callback for immediate Glass UI update (Grok's Observer pattern solution)"""
+        try:
+            # Get app name for Glass UI update
+            app_name = to_app.name if to_app else 'Unknown'
+            
+            # Create immediate Glass UI update with new app context
+            glass_summary = f"📱 {app_name}: Screen monitoring active (app switched)"
+            
+            # Send immediate update to Glass UI, bypassing visual polling
+            self._send_glass_ui_update("vision_summary", {
+                "summary": glass_summary,
+                "confidence": to_app.confidence if to_app else 0.0
+            })
+            
+            logger.debug(f"🚀 Immediate Glass UI update: {event_type} → {app_name} (<100ms latency)")
+            
+        except Exception as e:
+            logger.error(f"❌ App transition UI update failed: {e}")
+    
+    def _check_app_change_and_notify(self):
+        """Check for app changes and trigger immediate Observer pattern callback (bypasses broken NSWorkspace notifications)"""
+        try:
+            # Get current frontmost app
+            current_app = self.app_detector.get_frontmost_app()
+            if not current_app:
+                return
+                
+            current_app_name = current_app.name
+            
+            # Check if app changed
+            if self.current_app_name != current_app_name:
+                # Create mock previous app for callback signature compatibility
+                class MockApp:
+                    def __init__(self, name):
+                        self.name = name
+                        self.confidence = 1.0
+                
+                previous_app = MockApp(self.current_app_name) if self.current_app_name else None
+                
+                # Trigger immediate Observer pattern callback
+                self._on_app_transition_callback(previous_app, current_app, 'polling_detected')
+                
+                logger.info(f"🔄 App change detected: {self.current_app_name} → {current_app_name}")
+                
+                # Update stored app name
+                self.current_app_name = current_app_name
+                
+        except Exception as e:
+            logger.debug(f"App change detection failed: {e}")
             
     def _send_vision_summary_to_glass(self, context: VisualContext, confidence: float):
         """Send vision summary to Glass UI"""
         try:
-            # Create a concise summary for Glass UI
-            summary = context.get('analysis', '')
-            if len(summary) > 200:
-                summary = summary[:197] + "..."
+            # Get FULL summary for Glass UI (no truncation for full-screen display)
+            summary = getattr(context, 'vlm_analysis', '')
                 
-            app_info = context.get('app_context', {})
-            app_name = app_info.get('name', 'Unknown')
+            # Parse app context - handle both simple string and JSON formats
+            app_name = 'Unknown'
+            try:
+                if hasattr(context, 'app_context') and context.app_context:
+                    if isinstance(context.app_context, str):
+                        # Try JSON parsing first, then fall back to direct string
+                        try:
+                            app_info = json.loads(context.app_context)
+                            app_name = app_info.get('name', 'Unknown')
+                        except json.JSONDecodeError:
+                            # Direct string app name (like "Cursor")
+                            app_name = context.app_context
+                    elif isinstance(context.app_context, dict):
+                        app_name = context.app_context.get('name', 'Unknown')
+            except:
+                app_name = 'Unknown'
             
             glass_summary = f"📱 {app_name}: {summary}"
             
@@ -2238,6 +2361,43 @@ Provide a helpful, contextual response that directly answers the query. Be speci
             
         except Exception as e:
             logger.debug(f"🔇 Temporal query to Glass failed: {e}")
+            
+    def _send_lightweight_glass_update(self, image_path: str, change_confidence: float):
+        """Send lightweight Glass UI update without expensive VLM processing"""
+        try:
+            # Detect current app context
+            app_context = self._detect_app_context()
+            app_name = 'Unknown'
+            
+            try:
+                if app_context:
+                    if isinstance(app_context, str):
+                        app_info = json.loads(app_context)
+                        app_name = app_info.get('name', 'Unknown')
+                    elif isinstance(app_context, dict):
+                        app_name = app_context.get('name', 'Unknown')
+            except:
+                app_name = 'Unknown'
+            
+            # Get recent activity summary
+            recent_activity = "Monitoring screen activity..."
+            if self.activity_deque:
+                latest = self.activity_deque[-1]
+                recent_activity = latest.get('analysis', 'Monitoring screen activity...')[:200]
+            
+            # Create lightweight summary
+            glass_summary = f"📱 {app_name}: Screen monitoring active (change: {change_confidence:.2f}). {recent_activity}"
+            
+            # Send to Glass UI immediately
+            self._send_glass_ui_update("vision_summary", {
+                "summary": glass_summary,
+                "confidence": change_confidence
+            })
+            
+            logger.debug(f"📱 Sent lightweight Glass UI update: {app_name} (change: {change_confidence:.2f})")
+            
+        except Exception as e:
+            logger.debug(f"🔇 Lightweight Glass update failed: {e}")
 
 
 # Global continuous vision service with PILLAR 1 capabilities
@@ -2398,5 +2558,26 @@ def test_continuous_vision():
 
 
 if __name__ == "__main__":
-    # Test PILLAR 1 implementation
-    test_continuous_vision()
+    # Run continuous vision service
+    import signal
+    import sys
+    
+    service = ContinuousVisionService()
+    
+    def signal_handler(sig, frame):
+        logger.info("👋 Shutting down continuous vision service...")
+        service.stop_monitoring()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    service.start_monitoring()
+    logger.info("🚀 Continuous vision service running. Press Ctrl+C to stop.")
+    
+    # Keep the main thread alive
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        signal_handler(signal.SIGINT, None)
